@@ -32,6 +32,10 @@ yarn-error.*
 
 # local env files
 .env*.local
+vida-em-ordem-backend/.env
+vida-em-ordem-backend/*.sqlite
+vida-em-ordem-backend/*.sqlite-shm
+vida-em-ordem-backend/*.sqlite-wal
 
 # typescript
 *.tsbuildinfo
