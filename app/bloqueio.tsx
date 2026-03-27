@@ -32,6 +32,12 @@ export default function BloqueioScreen() {
   const [biometricLabel, setBiometricLabel] = useState("Biometria");
   const [isAuthenticating, setIsAuthenticating] = useState(false);
 
+  const navigateFromLock = useCallback((route: "/welcome" | "/cadastro" | "/") => {
+    setTimeout(() => {
+      router.replace(route);
+    }, 0);
+  }, []);
+
   const colors = useMemo(
     () =>
       getThemeColors(
@@ -45,14 +51,13 @@ export default function BloqueioScreen() {
   const unlockApp = useCallback(async () => {
     try {
       await AsyncStorage.setItem(APP_UNLOCKED_KEY, "true");
-      router.dismissAll();
-      router.replace("/");
+      navigateFromLock("/");
     } catch (error) {
       console.log("Erro ao desbloquear app:", error);
       Alert.alert("Erro", "Não foi possível desbloquear o app.");
       setTypedPin("");
     }
-  }, []);
+  }, [navigateFromLock]);
 
   const handleBiometricAuth = useCallback(
     async (silent = false) => {
@@ -181,7 +186,7 @@ export default function BloqueioScreen() {
           return;
         }
 
-        router.replace(session?.provider === "google" ? "/welcome" : "/cadastro");
+        navigateFromLock(session?.provider === "google" ? "/welcome" : "/cadastro");
         return;
       }
 
@@ -190,7 +195,7 @@ export default function BloqueioScreen() {
       console.log("Erro ao carregar bloqueio:", error);
       Alert.alert("Erro", "Não foi possível carregar a tela de bloqueio.");
     }
-  }, []);
+  }, [navigateFromLock]);
 
   useFocusEffect(
     useCallback(() => {

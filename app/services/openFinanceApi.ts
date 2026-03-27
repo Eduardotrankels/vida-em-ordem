@@ -3,6 +3,8 @@ import Constants from "expo-constants";
 import { resolveAppUserId } from "../utils/appSession";
 
 const PROD_BASE_URL = "https://api.vidaemordem.app";
+const CONFIGURED_BASE_URL =
+  Constants.expoConfig?.extra?.backendBaseUrl?.trim?.() || "";
 
 function resolveDevBackendBaseUrl() {
   const hostUri = Constants.expoConfig?.hostUri;
@@ -18,7 +20,11 @@ function resolveDevBackendBaseUrl() {
   return "http://72.62.137.25:3333";
 }
 
-const BASE_URL = __DEV__ ? resolveDevBackendBaseUrl() : PROD_BASE_URL;
+const BASE_URL = CONFIGURED_BASE_URL
+  ? CONFIGURED_BASE_URL
+  : __DEV__
+    ? resolveDevBackendBaseUrl()
+    : PROD_BASE_URL;
 
 const PREMIUM_KEY = "@vida_em_ordem_subscription_plan_v1";
 

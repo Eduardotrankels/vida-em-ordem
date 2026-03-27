@@ -1,9 +1,11 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { router, useFocusEffect } from "expo-router";
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Alert,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -11,7 +13,7 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import AppScreenHeader from "../components/AppScreenHeader";
 import GuidedTourOverlay from "../components/GuidedTourOverlay";
 import {
@@ -20,7 +22,16 @@ import {
   DEFAULT_SETTINGS,
   getThemeColors,
 } from "./utils/appTheme";
-import { AI_PLAN_KEY, normalizeLifeJourneyPlan } from "./utils/lifeJourney";
+import {
+  AI_JOURNEY_PROGRESS_KEY,
+  AI_PLAN_KEY,
+  AIJourneyProgress,
+  LifeJourneyPlan,
+  evaluateJourney,
+  getLifeAreaMeta,
+  normalizeJourneyProgress,
+  normalizeLifeJourneyPlan,
+} from "./utils/lifeJourney";
 import {
   completeJourneyModuleTour,
   readJourneyModuleTourState,
@@ -181,6 +192,14 @@ function getLast7DateKeys() {
   }
 
   return out;
+}
+
+function formatCountdown(ms: number) {
+  const totalSeconds = Math.max(Math.floor(ms / 1000), 0);
+  const hours = String(Math.floor(totalSeconds / 3600)).padStart(2, "0");
+  const minutes = String(Math.floor((totalSeconds % 3600) / 60)).padStart(2, "0");
+  const seconds = String(totalSeconds % 60).padStart(2, "0");
+  return `${hours}:${minutes}:${seconds}`;
 }
 
 const moduleCopyByLanguage = {
@@ -817,10 +836,131 @@ const healthHistoryPremiumCopyByLanguage = {
   },
 } as const;
 
+const journeyHealthCopyByLanguage = {
+  pt: {
+    waitingEyebrow: "IA programando o próximo dia",
+    waitingTitle: "Sua parte em Saúde já foi lida",
+    waitingText:
+      "A IA terminou de analisar o que você registrou aqui e nos outros módulos. O próximo dia só libera à meia-noite.",
+    countdownLabel: "Tempo para liberar a próxima fase",
+    planButton: "Ver plano de 7 dias",
+    setupTitle: "Monte sua base de saúde",
+    setupText:
+      "Cadastre pelo menos um cuidado ou medicamento para a IA entender melhor sua rotina física antes de avançar.",
+    setupButton: "Adicionar medicamento",
+    checkinTitle: "Faça seu check-in de saúde",
+    checkinText:
+      "Água, sono, exercício, humor e energia ajudam a IA a saber como seu corpo está respondendo à rotina.",
+    checkinButton: "Fazer check-in",
+    controlTitle: "Feche seus cuidados do dia",
+    controlText:
+      "Marque seus cuidados ou medicamentos de hoje para a IA considerar essa consistência na próxima leitura.",
+    controlButton: "Ver medicamentos do dia",
+    bridgeTitle: "Hoje a Saúde já fez sua parte",
+    bridgeText: "Para a jornada continuar se organizando, a próxima ação está em {{module}}.",
+    bridgeButton: "Ir para {{module}}",
+  },
+  en: {
+    waitingEyebrow: "AI programming the next day",
+    waitingTitle: "Your Health part has already been read",
+    waitingText:
+      "The AI has finished analyzing what you logged here and across the other modules. The next day only unlocks at midnight.",
+    countdownLabel: "Time until the next phase unlocks",
+    planButton: "Open 7-day plan",
+    setupTitle: "Build your health base",
+    setupText:
+      "Register at least one care item or medication so the AI can better understand your physical routine before moving on.",
+    setupButton: "Add medication",
+    checkinTitle: "Do your health check-in",
+    checkinText:
+      "Water, sleep, exercise, mood, and energy help the AI understand how your body is responding to your routine.",
+    checkinButton: "Do check-in",
+    controlTitle: "Close today's care cycle",
+    controlText:
+      "Mark today's care items or medications so the AI can consider this consistency in the next reading.",
+    controlButton: "See today's medications",
+    bridgeTitle: "Health has already done its part today",
+    bridgeText: "For the journey to keep organizing your life, the next action is in {{module}}.",
+    bridgeButton: "Go to {{module}}",
+  },
+  es: {
+    waitingEyebrow: "La IA programa el próximo día",
+    waitingTitle: "La parte de Salud ya fue leída",
+    waitingText:
+      "La IA terminó de analizar lo que registraste aquí y en los otros módulos. El próximo día solo se libera a medianoche.",
+    countdownLabel: "Tiempo para liberar la siguiente fase",
+    planButton: "Ver plan de 7 días",
+    setupTitle: "Crea tu base de salud",
+    setupText:
+      "Registra al menos un cuidado o medicamento para que la IA entienda mejor tu rutina física antes de avanzar.",
+    setupButton: "Añadir medicamento",
+    checkinTitle: "Haz tu check-in de salud",
+    checkinText:
+      "Agua, sueño, ejercicio, estado de ánimo y energía ayudan a la IA a entender cómo responde tu cuerpo a la rutina.",
+    checkinButton: "Hacer check-in",
+    controlTitle: "Cierra tus cuidados del día",
+    controlText:
+      "Marca tus cuidados o medicamentos de hoy para que la IA considere esa constancia en la siguiente lectura.",
+    controlButton: "Ver medicamentos de hoy",
+    bridgeTitle: "Hoy Salud ya hizo su parte",
+    bridgeText: "Para que la jornada siga organizando tu vida, la próxima acción está en {{module}}.",
+    bridgeButton: "Ir a {{module}}",
+  },
+  fr: {
+    waitingEyebrow: "L'IA prépare le jour suivant",
+    waitingTitle: "Votre partie Santé a déjà été lue",
+    waitingText:
+      "L'IA a terminé d'analyser ce que vous avez enregistré ici et dans les autres modules. Le jour suivant ne sera libéré qu'à minuit.",
+    countdownLabel: "Temps avant la prochaine phase",
+    planButton: "Voir le plan de 7 jours",
+    setupTitle: "Construisez votre base santé",
+    setupText:
+      "Enregistrez au moins un soin ou médicament pour que l'IA comprenne mieux votre routine physique avant d'avancer.",
+    setupButton: "Ajouter un médicament",
+    checkinTitle: "Faites votre check-in santé",
+    checkinText:
+      "Eau, sommeil, exercice, humeur et énergie aident l'IA à comprendre comment votre corps réagit à la routine.",
+    checkinButton: "Faire le check-in",
+    controlTitle: "Clôturez vos soins du jour",
+    controlText:
+      "Cochez les soins ou médicaments d'aujourd'hui pour que l'IA tienne compte de cette constance dans la prochaine lecture.",
+    controlButton: "Voir les médicaments du jour",
+    bridgeTitle: "Aujourd'hui, la Santé a déjà fait sa part",
+    bridgeText: "Pour que le parcours continue à organiser votre vie, la prochaine action se trouve dans {{module}}.",
+    bridgeButton: "Aller vers {{module}}",
+  },
+  it: {
+    waitingEyebrow: "L'IA prepara il prossimo giorno",
+    waitingTitle: "La parte Salute è già stata letta",
+    waitingText:
+      "L'IA ha finito di analizzare ciò che hai registrato qui e negli altri moduli. Il giorno successivo si sblocca solo a mezzanotte.",
+    countdownLabel: "Tempo per sbloccare la prossima fase",
+    planButton: "Vedi il piano di 7 giorni",
+    setupTitle: "Costruisci la tua base salute",
+    setupText:
+      "Registra almeno una cura o un farmaco così l'IA può capire meglio la tua routine fisica prima di andare avanti.",
+    setupButton: "Aggiungi farmaco",
+    checkinTitle: "Fai il check-in salute",
+    checkinText:
+      "Acqua, sonno, esercizio, umore ed energia aiutano l'IA a capire come il tuo corpo sta reagendo alla routine.",
+    checkinButton: "Fare check-in",
+    controlTitle: "Chiudi le cure del giorno",
+    controlText:
+      "Segna le cure o i farmaci di oggi così l'IA potrà considerare questa costanza nella prossima lettura.",
+    controlButton: "Vedi i farmaci di oggi",
+    bridgeTitle: "Oggi la Salute ha già fatto la sua parte",
+    bridgeText: "Per far continuare il percorso a organizzare la tua vita, la prossima azione è in {{module}}.",
+    bridgeButton: "Vai a {{module}}",
+  },
+} as const;
+
 export default function SaudeScreen() {
   const { language } = useAppLanguage();
+  const insets = useSafeAreaInsets();
   const copy = useMemo(() => moduleCopyByLanguage[language], [language]);
   const ui = useMemo(() => healthUiCopyByLanguage[language], [language]);
+  const journeyUi = useMemo(() => journeyHealthCopyByLanguage[language], [language]);
+  const lifeAreaMeta = useMemo(() => getLifeAreaMeta(language), [language]);
   const formatDate = useCallback(
     (dateKey: string) => formatDateByLanguage(dateKey, language),
     [language]
@@ -858,9 +998,14 @@ export default function SaudeScreen() {
   const [medicationModalOpen, setMedicationModalOpen] = useState(false);
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [plan, setPlan] = useState<SubscriptionPlan | null>(null);
+  const [journeyPlan, setJourneyPlan] = useState<LifeJourneyPlan | null>(null);
+  const [journeyProgress, setJourneyProgress] = useState<AIJourneyProgress>(
+    normalizeJourneyProgress(null)
+  );
   const [isHydrated, setIsHydrated] = useState(false);
   const [showModuleTour, setShowModuleTour] = useState(false);
   const [moduleTourStepIndex, setModuleTourStepIndex] = useState(0);
+  const [countdownNow, setCountdownNow] = useState(Date.now());
 
   const [waterCups, setWaterCups] = useState("");
   const [sleepHours, setSleepHours] = useState("");
@@ -897,12 +1042,13 @@ export default function SaudeScreen() {
 
   const loadEntries = useCallback(async () => {
     try {
-      const [healthRaw, medsRaw, settingsRaw, planRaw, aiPlanRaw] = await Promise.all([
+      const [healthRaw, medsRaw, settingsRaw, planRaw, aiPlanRaw, aiProgressRaw] = await Promise.all([
         AsyncStorage.getItem(HEALTH_KEY),
         AsyncStorage.getItem(MEDICATIONS_KEY),
         AsyncStorage.getItem(APP_SETTINGS_KEY),
         AsyncStorage.getItem(SUBSCRIPTION_PLAN_KEY),
         AsyncStorage.getItem(AI_PLAN_KEY),
+        AsyncStorage.getItem(AI_JOURNEY_PROGRESS_KEY),
       ]);
 
       const parsedHealth = healthRaw ? JSON.parse(healthRaw) : [];
@@ -920,7 +1066,10 @@ export default function SaudeScreen() {
       setMedications(Array.isArray(parsedMeds) ? parsedMeds : []);
       setPlan(effectivePlan);
       setSettings({
-        theme: parsedSettings?.theme === "light" ? "light" : "dark",
+        theme:
+          parsedSettings?.theme === "light" || parsedSettings?.theme === "system"
+            ? parsedSettings.theme
+            : "dark",
         accentColor:
           parsedSettings?.accentColor || DEFAULT_SETTINGS.accentColor,
         inactivityLockMinutes:
@@ -931,11 +1080,39 @@ export default function SaudeScreen() {
             ? parsedSettings.inactivityLockMinutes
             : 0,
         plan: effectivePlan,
+        regionPreference:
+          parsedSettings?.regionPreference === "BR" ||
+          parsedSettings?.regionPreference === "US" ||
+          parsedSettings?.regionPreference === "ES" ||
+          parsedSettings?.regionPreference === "FR" ||
+          parsedSettings?.regionPreference === "IT"
+            ? parsedSettings.regionPreference
+            : "auto",
+        currencyPreference:
+          parsedSettings?.currencyPreference === "BRL" ||
+          parsedSettings?.currencyPreference === "USD" ||
+          parsedSettings?.currencyPreference === "EUR"
+            ? parsedSettings.currencyPreference
+            : "auto",
       });
 
-      const normalizedPlan = aiPlanRaw
-        ? normalizeLifeJourneyPlan(JSON.parse(aiPlanRaw))
-        : null;
+      const evaluated = await evaluateJourney(
+        aiPlanRaw ? JSON.parse(aiPlanRaw) : null,
+        aiProgressRaw ? JSON.parse(aiProgressRaw) : null,
+        language
+      );
+      if (evaluated.plan) {
+        await Promise.all([
+          AsyncStorage.setItem(AI_PLAN_KEY, JSON.stringify(evaluated.plan)),
+          AsyncStorage.setItem(
+            AI_JOURNEY_PROGRESS_KEY,
+            JSON.stringify(evaluated.progress)
+          ),
+        ]);
+      }
+      const normalizedPlan = normalizeLifeJourneyPlan(evaluated.plan, language);
+      setJourneyPlan(evaluated.plan);
+      setJourneyProgress(evaluated.progress);
       const moduleTourState = await readJourneyModuleTourState();
 
       if (normalizedPlan?.primaryArea === "saude" && !moduleTourState.saude) {
@@ -948,20 +1125,20 @@ export default function SaudeScreen() {
       console.log("Erro ao carregar saúde:", error);
       setSettings(DEFAULT_SETTINGS);
       setPlan("free");
+      setJourneyPlan(null);
+      setJourneyProgress(normalizeJourneyProgress(null));
       setEntries([]);
       setMedications([]);
       setShowModuleTour(false);
     } finally {
       setIsHydrated(true);
     }
-  }, []);
+  }, [language]);
 
   useFocusEffect(
     useCallback(() => {
-      if (!isHydrated) {
-        loadEntries();
-      }
-    }, [isHydrated, loadEntries])
+      void loadEntries();
+    }, [loadEntries])
   );
 
   const saveEntries = useCallback(async (next: HealthEntry[]) => {
@@ -989,6 +1166,14 @@ export default function SaudeScreen() {
     [settings.theme, settings.accentColor]
   );
   const activeHealthTourStep = healthTourSteps[moduleTourStepIndex];
+
+  useEffect(() => {
+    if (!journeyProgress.nextDayUnlockAt && journeyProgress.analysisStatus !== "processing") {
+      return;
+    }
+    const timer = setInterval(() => setCountdownNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [journeyProgress.analysisStatus, journeyProgress.nextDayUnlockAt]);
 
   const handleAdvanceModuleTour = useCallback(async () => {
     const lastStep = moduleTourStepIndex >= healthTourSteps.length - 1;
@@ -1113,6 +1298,160 @@ export default function SaudeScreen() {
     ).length;
   }, [activeMedications, today]);
 
+  const currentJourneyDay = useMemo(
+    () =>
+      journeyPlan?.journeyDays.find((day) => day.day === journeyProgress.currentDay) ??
+      null,
+    [journeyPlan, journeyProgress.currentDay]
+  );
+
+  const nextDayCountdown = useMemo(() => {
+    if (!journeyProgress.nextDayUnlockAt) return null;
+    return formatCountdown(
+      new Date(journeyProgress.nextDayUnlockAt).getTime() - countdownNow
+    );
+  }, [countdownNow, journeyProgress.nextDayUnlockAt]);
+
+  const isJourneyAnalyzing =
+    journeyProgress.analysisStatus === "processing" &&
+    Boolean(journeyProgress.analysisCompletedAt) &&
+    new Date(journeyProgress.analysisCompletedAt || 0).getTime() > countdownNow;
+
+  const waitingForNextRelease = Boolean(journeyProgress.nextDayUnlockAt);
+
+  const currentHealthTask = useMemo(
+    () =>
+      currentJourneyDay?.tasks.find(
+        (task) =>
+          !task.completed &&
+          (task.validationType === "medications_total" ||
+            task.validationType === "medications_taken_today" ||
+            task.validationType === "checkin_today")
+      ) ?? null,
+    [currentJourneyDay]
+  );
+
+  const currentCrossTask = useMemo(
+    () =>
+      currentJourneyDay?.tasks.find(
+        (task) =>
+          !task.completed &&
+          task.validationType !== "medications_total" &&
+          task.validationType !== "medications_taken_today" &&
+          task.validationType !== "checkin_today"
+      ) ?? null,
+    [currentJourneyDay]
+  );
+
+  const crossModuleMeta = useMemo(() => {
+    if (!currentCrossTask) return null;
+    if (
+      currentCrossTask.validationType === "money_entries_total" ||
+      currentCrossTask.validationType === "money_entries_today" ||
+      currentCrossTask.validationType === "fixed_bills_total"
+    ) {
+      return lifeAreaMeta.financeiro;
+    }
+    if (
+      currentCrossTask.validationType === "goals_total" ||
+      currentCrossTask.validationType === "goals_today"
+    ) {
+      return lifeAreaMeta.financeiro;
+    }
+    if (
+      currentCrossTask.validationType === "learning_items_total" ||
+      currentCrossTask.validationType === "learning_today"
+    ) {
+      return lifeAreaMeta.aprendizado;
+    }
+    if (
+      currentCrossTask.validationType === "time_items_total" ||
+      currentCrossTask.validationType === "time_today"
+    ) {
+      return lifeAreaMeta.tempo;
+    }
+    if (
+      currentCrossTask.validationType === "work_items_total" ||
+      currentCrossTask.validationType === "work_today"
+    ) {
+      return lifeAreaMeta.trabalho;
+    }
+    if (
+      currentCrossTask.validationType === "habits_total" ||
+      currentCrossTask.validationType === "habits_completed_today"
+    ) {
+      return lifeAreaMeta.habitos;
+    }
+    if (
+      currentCrossTask.validationType === "leisure_items_total" ||
+      currentCrossTask.validationType === "leisure_today"
+    ) {
+      return lifeAreaMeta.lazer;
+    }
+    if (
+      currentCrossTask.validationType === "spiritual_items_total" ||
+      currentCrossTask.validationType === "spiritual_today"
+    ) {
+      return lifeAreaMeta.espiritualidade;
+    }
+    return null;
+  }, [currentCrossTask, lifeAreaMeta]);
+
+  const crossModuleRoute = useMemo(() => {
+    if (!currentCrossTask) return null;
+    if (
+      currentCrossTask.validationType === "money_entries_total" ||
+      currentCrossTask.validationType === "money_entries_today" ||
+      currentCrossTask.validationType === "fixed_bills_total"
+    ) {
+      return "/dinheiro" as const;
+    }
+    if (
+      currentCrossTask.validationType === "goals_total" ||
+      currentCrossTask.validationType === "goals_today"
+    ) {
+      return "/metas" as const;
+    }
+    if (
+      currentCrossTask.validationType === "learning_items_total" ||
+      currentCrossTask.validationType === "learning_today"
+    ) {
+      return "/aprendizado" as const;
+    }
+    if (
+      currentCrossTask.validationType === "time_items_total" ||
+      currentCrossTask.validationType === "time_today"
+    ) {
+      return "/tempo" as const;
+    }
+    if (
+      currentCrossTask.validationType === "work_items_total" ||
+      currentCrossTask.validationType === "work_today"
+    ) {
+      return "/trabalho" as const;
+    }
+    if (
+      currentCrossTask.validationType === "habits_total" ||
+      currentCrossTask.validationType === "habits_completed_today"
+    ) {
+      return "/habitos" as const;
+    }
+    if (
+      currentCrossTask.validationType === "leisure_items_total" ||
+      currentCrossTask.validationType === "leisure_today"
+    ) {
+      return "/lazer" as const;
+    }
+    if (
+      currentCrossTask.validationType === "spiritual_items_total" ||
+      currentCrossTask.validationType === "spiritual_today"
+    ) {
+      return "/espiritualidade" as const;
+    }
+    return null;
+  }, [currentCrossTask]);
+
+
   const saveTodayHealth = useCallback(async () => {
     const parsedWater = Number(waterCups.replace(",", "."));
     const parsedSleep = Number(sleepHours.replace(",", "."));
@@ -1160,6 +1499,7 @@ export default function SaudeScreen() {
     const next = [nextEntry, ...withoutToday];
 
     await saveEntries(next);
+    await loadEntries();
     setModalOpen(false);
     Alert.alert(ui.healthSavedTitle, ui.healthSavedText);
   }, [
@@ -1173,6 +1513,7 @@ export default function SaudeScreen() {
     todayEntry,
     today,
     entries,
+    loadEntries,
     saveEntries,
     ui,
   ]);
@@ -1272,6 +1613,7 @@ export default function SaudeScreen() {
     };
 
     await saveMedications([newMedication, ...medications]);
+    await loadEntries();
 
     setMedicationName("");
     setMedicationDosage("");
@@ -1286,6 +1628,7 @@ export default function SaudeScreen() {
     activeMedications.length,
     isPremium,
     medications,
+    loadEntries,
     saveMedications,
     showPremiumAlert,
     ui,
@@ -1307,8 +1650,9 @@ export default function SaudeScreen() {
       });
 
       await saveMedications(next);
+      await loadEntries();
     },
-    [medications, saveMedications, today]
+    [loadEntries, medications, saveMedications, today]
   );
 
   const toggleMedicationActive = useCallback(
@@ -1333,8 +1677,16 @@ export default function SaudeScreen() {
       );
 
       await saveMedications(next);
+      await loadEntries();
     },
-    [isPremium, medications, saveMedications, showPremiumAlert, ui.freeMedicationFeature]
+    [
+      isPremium,
+      loadEntries,
+      medications,
+      saveMedications,
+      showPremiumAlert,
+      ui.freeMedicationFeature,
+    ]
   );
 
   const removeMedication = useCallback(
@@ -1347,12 +1699,94 @@ export default function SaudeScreen() {
           onPress: async () => {
             const next = medications.filter((item) => item.id !== medicationId);
             await saveMedications(next);
+            await loadEntries();
           },
         },
       ]);
     },
-    [medications, saveMedications, ui]
+    [loadEntries, medications, saveMedications, ui]
   );
+
+  const journeyGuidance = useMemo(() => {
+    if (!journeyPlan) return null;
+
+    if (isJourneyAnalyzing || waitingForNextRelease) {
+      return {
+        eyebrow: journeyUi.waitingEyebrow,
+        title: journeyUi.waitingTitle,
+        text: journeyUi.waitingText,
+        cta: journeyUi.planButton,
+        tone: "accent" as const,
+        onPress: () => router.push("/plano-ia"),
+      };
+    }
+
+    if (currentHealthTask?.validationType === "medications_total") {
+      return {
+        eyebrow:
+          journeyPlan.primaryArea === "saude"
+            ? journeyPlan.summaryTitle
+            : copy.headerTitle,
+        title: journeyUi.setupTitle,
+        text: journeyUi.setupText,
+        cta: journeyUi.setupButton,
+        tone: "accent" as const,
+        onPress: openMedicationModal,
+      };
+    }
+
+    if (currentHealthTask?.validationType === "checkin_today") {
+      return {
+        eyebrow:
+          journeyPlan.primaryArea === "saude"
+            ? journeyPlan.summaryTitle
+            : copy.headerTitle,
+        title: journeyUi.checkinTitle,
+        text: journeyUi.checkinText,
+        cta: journeyUi.checkinButton,
+        tone: "accent" as const,
+        onPress: openModalWithToday,
+      };
+    }
+
+    if (currentHealthTask?.validationType === "medications_taken_today") {
+      return {
+        eyebrow:
+          journeyPlan.primaryArea === "saude"
+            ? journeyPlan.summaryTitle
+            : copy.headerTitle,
+        title: journeyUi.controlTitle,
+        text: journeyUi.controlText,
+        cta: journeyUi.controlButton,
+        tone: "neutral" as const,
+        onPress: () => {},
+      };
+    }
+
+    if (crossModuleMeta && crossModuleRoute) {
+      return {
+        eyebrow: journeyPlan.summaryTitle,
+        title: journeyUi.bridgeTitle,
+        text: journeyUi.bridgeText.replace("{{module}}", crossModuleMeta.label),
+        cta: journeyUi.bridgeButton.replace("{{module}}", crossModuleMeta.label),
+        tone: "neutral" as const,
+        onPress: () => router.push(crossModuleRoute),
+      };
+    }
+
+    return null;
+  }, [
+    copy.headerTitle,
+    crossModuleMeta,
+    crossModuleRoute,
+    currentHealthTask?.validationType,
+    isJourneyAnalyzing,
+    journeyPlan,
+    journeyUi,
+    openMedicationModal,
+    openModalWithToday,
+    waitingForNextRelease,
+  ]);
 
   return (
     <SafeAreaView
@@ -1374,6 +1808,68 @@ export default function SaudeScreen() {
           badgeTone={isPremium ? "success" : "accent"}
           onBadgePress={isHydrated ? goToPremium : undefined}
         />
+
+        {journeyGuidance ? (
+          <View
+            style={[
+              journeyGuidance.tone === "accent"
+                ? styles.loadingCard
+                : styles.lockedCard,
+              {
+                backgroundColor: colors.surface,
+                borderColor:
+                  journeyGuidance.tone === "accent"
+                    ? colors.accentBorder
+                    : colors.border,
+              },
+            ]}
+          >
+            <Text
+              style={[
+                styles.loadingTitle,
+                {
+                  color:
+                    journeyGuidance.tone === "accent"
+                      ? colors.accent
+                      : colors.text,
+                },
+              ]}
+            >
+              {journeyGuidance.eyebrow}
+            </Text>
+            <Text style={[styles.lockedTitle, { color: colors.text }]}>
+              {journeyGuidance.title}
+            </Text>
+            <Text style={[styles.lockedText, { color: colors.textSecondary }]}>
+              {journeyGuidance.text}
+            </Text>
+            {waitingForNextRelease && nextDayCountdown ? (
+              <Text style={[styles.loadingText, { color: colors.accent }]}>
+                {journeyUi.countdownLabel}: {nextDayCountdown}
+              </Text>
+            ) : null}
+            <Pressable
+              style={[
+                styles.lockedButton,
+                {
+                  backgroundColor: colors.accentButtonBackground,
+                  borderColor: colors.accentButtonBorder,
+                },
+                colors.isWhiteAccentButton && styles.whiteAccentButton,
+              ]}
+              onPress={journeyGuidance.onPress}
+            >
+              <Text
+                style={[
+                  styles.lockedButtonText,
+                  { color: colors.accentButtonText },
+                ]}
+              >
+                {journeyGuidance.cta}
+              </Text>
+            </Pressable>
+          </View>
+        ) : null}
 
             <View style={styles.summaryGrid}>
               <View
@@ -2059,21 +2555,36 @@ export default function SaudeScreen() {
       </ScrollView>
 
       <Modal visible={modalOpen} transparent animationType="slide">
-        <View
-          style={[
-            styles.modalBackdrop,
-            { backgroundColor: "rgba(0,0,0,0.72)" },
-          ]}
+        <KeyboardAvoidingView
+          style={styles.modalKeyboardWrap}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
         >
           <View
             style={[
-              styles.modalCard,
+              styles.modalBackdrop,
               {
-                backgroundColor: colors.surface,
-                borderColor: colors.border,
+                backgroundColor: "rgba(0,0,0,0.72)",
+                paddingBottom: Math.max(insets.bottom, 12),
               },
             ]}
           >
+            <ScrollView
+              style={[
+                styles.modalCard,
+                {
+                  backgroundColor: colors.surface,
+                  borderColor: colors.border,
+                },
+              ]}
+              contentContainerStyle={[
+                styles.modalCardContent,
+                {
+                  paddingBottom: 18 + Math.max(insets.bottom, 12),
+                },
+              ]}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+            >
             <Text style={[styles.modalTitle, { color: colors.text }]}>
               {ui.dailyCheckinTitle}
             </Text>
@@ -2250,42 +2761,58 @@ export default function SaudeScreen() {
               </Text>
             </Pressable>
 
-            <Pressable
-              style={[
-                styles.cancelButton,
-                {
-                  backgroundColor: colors.surfaceAlt,
-                  borderColor: colors.border,
-                },
-              ]}
-              onPress={() => setModalOpen(false)}
-            >
-              <Text
-                style={[styles.cancelButtonText, { color: colors.text }]}
+              <Pressable
+                style={[
+                  styles.cancelButton,
+                  {
+                    backgroundColor: colors.surfaceAlt,
+                    borderColor: colors.border,
+                  },
+                ]}
+                onPress={() => setModalOpen(false)}
               >
-                {ui.cancel}
-              </Text>
-            </Pressable>
+                <Text
+                  style={[styles.cancelButtonText, { color: colors.text }]}
+                >
+                  {ui.cancel}
+                </Text>
+              </Pressable>
+            </ScrollView>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       <Modal visible={medicationModalOpen} transparent animationType="slide">
-        <View
-          style={[
-            styles.modalBackdrop,
-            { backgroundColor: "rgba(0,0,0,0.72)" },
-          ]}
+        <KeyboardAvoidingView
+          style={styles.modalKeyboardWrap}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
         >
           <View
             style={[
-              styles.modalCard,
+              styles.modalBackdrop,
               {
-                backgroundColor: colors.surface,
-                borderColor: colors.border,
+                backgroundColor: "rgba(0,0,0,0.72)",
+                paddingBottom: Math.max(insets.bottom, 12),
               },
             ]}
           >
+            <ScrollView
+              style={[
+                styles.modalCard,
+                {
+                  backgroundColor: colors.surface,
+                  borderColor: colors.border,
+                },
+              ]}
+              contentContainerStyle={[
+                styles.modalCardContent,
+                {
+                  paddingBottom: 18 + Math.max(insets.bottom, 12),
+                },
+              ]}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+            >
             <Text style={[styles.modalTitle, { color: colors.text }]}>
               {ui.newMedicationTitle}
             </Text>
@@ -2373,24 +2900,25 @@ export default function SaudeScreen() {
               </Text>
             </Pressable>
 
-            <Pressable
-              style={[
-                styles.cancelButton,
-                {
-                  backgroundColor: colors.surfaceAlt,
-                  borderColor: colors.border,
-                },
-              ]}
-              onPress={() => setMedicationModalOpen(false)}
-            >
-              <Text
-                style={[styles.cancelButtonText, { color: colors.text }]}
+              <Pressable
+                style={[
+                  styles.cancelButton,
+                  {
+                    backgroundColor: colors.surfaceAlt,
+                    borderColor: colors.border,
+                  },
+                ]}
+                onPress={() => setMedicationModalOpen(false)}
               >
-                {ui.cancel}
-              </Text>
-            </Pressable>
+                <Text
+                  style={[styles.cancelButtonText, { color: colors.text }]}
+                >
+                  {ui.cancel}
+                </Text>
+              </Pressable>
+            </ScrollView>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {showModuleTour && activeHealthTourStep ? (
@@ -2906,12 +3434,20 @@ const styles = StyleSheet.create({
     justifyContent: "flex-end",
   },
 
+  modalKeyboardWrap: {
+    flex: 1,
+  },
+
   modalCard: {
     borderTopLeftRadius: 22,
     borderTopRightRadius: 22,
-    padding: 16,
     borderWidth: 1,
     maxHeight: "92%",
+    overflow: "hidden",
+  },
+
+  modalCardContent: {
+    padding: 16,
   },
 
   modalTitle: {

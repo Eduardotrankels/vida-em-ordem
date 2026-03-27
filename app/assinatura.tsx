@@ -1,8 +1,9 @@
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import React from "react";
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import AppScreenHeader from "../components/AppScreenHeader";
+import { getBillingStatus, openManagePlan, openPremiumCheckout } from "./services/billing";
 import { useAppLanguage } from "./utils/languageContext";
 import { getScreenContentBottomPadding } from "./utils/safeArea";
 import { useAppTheme } from "./utils/themeContext";
@@ -61,7 +62,7 @@ const copyByLanguage = {
     testFree: "Testar modo Free",
     testFreeActive: "Modo Free ativo",
     footerNote:
-      "Em breve, esta tela será conectada ao checkout real de assinatura.",
+      "Pagamentos e gerenciamento do plano são processados com segurança pela Stripe.",
     premiumOnTitle: "Modo Premium ativado",
     premiumOnText: "O Premium foi ativado em modo teste neste dispositivo.",
     premiumOnError: "Não foi possível ativar o modo Premium.",
@@ -122,7 +123,8 @@ const copyByLanguage = {
     testPremiumActive: "Premium mode active",
     testFree: "Try Free mode",
     testFreeActive: "Free mode active",
-    footerNote: "Soon this screen will be connected to the real subscription checkout.",
+    footerNote:
+      "Payments and plan management are securely handled by Stripe.",
     premiumOnTitle: "Premium mode enabled",
     premiumOnText: "Premium has been enabled in test mode on this device.",
     premiumOnError: "Could not enable Premium mode.",
@@ -185,7 +187,7 @@ const copyByLanguage = {
     testFree: "Probar modo Free",
     testFreeActive: "Modo Free activo",
     footerNote:
-      "Pronto esta pantalla estará conectada al checkout real de suscripción.",
+      "Los pagos y la gestión del plan se procesan de forma segura con Stripe.",
     premiumOnTitle: "Modo Premium activado",
     premiumOnText: "Premium fue activado en modo de prueba en este dispositivo.",
     premiumOnError: "No se pudo activar el modo Premium.",
@@ -249,7 +251,7 @@ const copyByLanguage = {
     testFree: "Tester le mode Free",
     testFreeActive: "Mode Free actif",
     footerNote:
-      "Bientôt, cet écran sera connecté au vrai checkout d'abonnement.",
+      "Les paiements et la gestion du plan sont traités de manière sécurisée par Stripe.",
     premiumOnTitle: "Mode Premium activé",
     premiumOnText: "Premium a été activé en mode test sur cet appareil.",
     premiumOnError: "Impossible d'activer le mode Premium.",
@@ -313,7 +315,7 @@ const copyByLanguage = {
     testFree: "Prova la modalità Free",
     testFreeActive: "Modalità Free attiva",
     footerNote:
-      "Presto questa schermata sarà collegata al checkout reale dell'abbonamento.",
+      "Pagamenti e gestione del piano sono elaborati in modo sicuro da Stripe.",
     premiumOnTitle: "Modalità Premium attivata",
     premiumOnText: "Premium è stato attivato in modalità test su questo dispositivo.",
     premiumOnError: "Non è stato possibile attivare la modalità Premium.",
@@ -326,11 +328,75 @@ const copyByLanguage = {
   },
 } as const;
 
+const billingInboxCopy = {
+  pt: {
+    checkoutTitle: "Checkout Premium aberto",
+    checkoutMessage:
+      "Seu checkout externo foi aberto para concluir a assinatura do Vida em Ordem.",
+    manageTitle: "Gerenciamento do plano aberto",
+    manageMessage:
+      "Sua área externa de gerenciamento do plano foi aberta pelo app.",
+  },
+  en: {
+    checkoutTitle: "Premium checkout opened",
+    checkoutMessage:
+      "Your external checkout was opened so you can finish the Vida em Ordem subscription.",
+    manageTitle: "Plan management opened",
+    manageMessage:
+      "Your external plan management area was opened by the app.",
+  },
+  es: {
+    checkoutTitle: "Checkout Premium abierto",
+    checkoutMessage:
+      "Tu checkout externo se abrió para finalizar la suscripción de Vida em Ordem.",
+    manageTitle: "Gestión del plan abierta",
+    manageMessage:
+      "La zona externa de gestión del plan fue abierta por la app.",
+  },
+  fr: {
+    checkoutTitle: "Checkout Premium ouvert",
+    checkoutMessage:
+      "Votre checkout externe a été ouvert pour finaliser l'abonnement Vida em Ordem.",
+    manageTitle: "Gestion du plan ouverte",
+    manageMessage:
+      "L'espace externe de gestion de votre plan a été ouvert par l'app.",
+  },
+  it: {
+    checkoutTitle: "Checkout Premium aperto",
+    checkoutMessage:
+      "Il checkout esterno è stato aperto per completare l'abbonamento a Vida em Ordem.",
+    manageTitle: "Gestione del piano aperta",
+    manageMessage:
+      "L'area esterna di gestione del piano è stata aperta dall'app.",
+  },
+} as const;
+
 export default function AssinaturaScreen() {
   const insets = useSafeAreaInsets();
   const { settings, colors, patchAppSettings } = useAppTheme();
   const { language, t } = useAppLanguage();
   const copy = copyByLanguage[language];
+  const showDebugPlanActions = __DEV__;
+
+  useFocusEffect(
+    React.useCallback(() => {
+      void (async () => {
+        try {
+          const status = await getBillingStatus();
+          const nextPlan =
+            status.subscription?.plan === "premium" || status.plan === "premium"
+              ? "premium"
+              : "free";
+
+          if (settings.plan !== nextPlan) {
+            await patchAppSettings({ plan: nextPlan });
+          }
+        } catch (error) {
+          console.log("Erro ao sincronizar status da assinatura:", error);
+        }
+      })();
+    }, [patchAppSettings, settings.plan])
+  );
 
   async function testarModoPremium() {
     try {
@@ -364,8 +430,33 @@ export default function AssinaturaScreen() {
     }
   }
 
-  function assinarPremium() {
-    Alert.alert(copy.checkoutTitle, copy.checkoutText, [{ text: t("common.gotIt") }]);
+  function handlePrimaryBillingAction() {
+    void (async () => {
+      try {
+        const billingCopy = billingInboxCopy[language];
+
+        if (settings.plan === "premium") {
+          await openManagePlan({
+            inboxTitle: billingCopy.manageTitle,
+            inboxMessage: billingCopy.manageMessage,
+            actionRoute: "/assinatura",
+          });
+          return;
+        }
+
+        await openPremiumCheckout({
+          inboxTitle: billingCopy.checkoutTitle,
+          inboxMessage: billingCopy.checkoutMessage,
+          actionRoute: "/assinatura",
+        });
+      } catch (error: any) {
+        Alert.alert(
+          settings.plan === "premium" ? t("common.managePlan") : copy.checkoutTitle,
+          error?.message || copy.checkoutText,
+          [{ text: t("common.gotIt") }]
+        );
+      }
+    })();
   }
 
   return (
@@ -619,36 +710,40 @@ export default function AssinaturaScreen() {
             },
             colors.isWhiteAccentButton && styles.whiteAccentButton,
           ]}
-          onPress={assinarPremium}
+          onPress={handlePrimaryBillingAction}
         >
           <Text style={[styles.primaryButtonText, { color: colors.accentButtonText }]}>
-            {copy.subscribeButton}
+            {settings.plan === "premium" ? t("common.managePlan") : copy.subscribeButton}
           </Text>
         </Pressable>
 
-        <Pressable
-          style={[
-            styles.secondaryButton,
-            {
-              backgroundColor: colors.surfaceAlt,
-              borderColor: colors.border,
-            },
-          ]}
-          onPress={testarModoPremium}
-        >
-          <Text style={[styles.secondaryButtonText, { color: colors.text }]}>
-            {settings.plan === "premium" ? copy.testPremiumActive : copy.testPremium}
-          </Text>
-        </Pressable>
+        {showDebugPlanActions ? (
+          <>
+            <Pressable
+              style={[
+                styles.secondaryButton,
+                {
+                  backgroundColor: colors.surfaceAlt,
+                  borderColor: colors.border,
+                },
+              ]}
+              onPress={testarModoPremium}
+            >
+              <Text style={[styles.secondaryButtonText, { color: colors.text }]}>
+                {settings.plan === "premium" ? copy.testPremiumActive : copy.testPremium}
+              </Text>
+            </Pressable>
 
-        <Pressable
-          style={[styles.ghostButton, { borderColor: colors.border }]}
-          onPress={testarModoFree}
-        >
-          <Text style={[styles.ghostButtonText, { color: colors.textMuted }]}>
-            {settings.plan === "free" ? copy.testFreeActive : copy.testFree}
-          </Text>
-        </Pressable>
+            <Pressable
+              style={[styles.ghostButton, { borderColor: colors.border }]}
+              onPress={testarModoFree}
+            >
+              <Text style={[styles.ghostButtonText, { color: colors.textMuted }]}>
+                {settings.plan === "free" ? copy.testFreeActive : copy.testFree}
+              </Text>
+            </Pressable>
+          </>
+        ) : null}
 
         <Text style={[styles.footerNote, { color: colors.textSecondary }]}>
           {copy.footerNote}

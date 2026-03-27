@@ -1,5 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as ImagePicker from "expo-image-picker";
+import Ionicons from "@expo/vector-icons/Ionicons";
 import { router, useFocusEffect } from "expo-router";
 import React, { useCallback, useMemo, useState } from "react";
 import Slider from "@react-native-community/slider";
@@ -20,7 +21,6 @@ import {
   APP_SETTINGS_KEY,
   AppSettings,
   DEFAULT_SETTINGS,
-  getThemeColors,
 } from "./utils/appTheme";
 import { useAppLanguage } from "./utils/languageContext";
 import { formatDateByLanguage } from "./utils/locale";
@@ -181,9 +181,63 @@ const COLOR_WHEEL_SWATCHES = Array.from({ length: 18 }, (_, index) => ({
   angle: (index / 18) * Math.PI * 2 - Math.PI / 2,
 }));
 
+const supportCopyByLanguage = {
+  pt: {
+    sectionTitle: "Acesso, ajustes e suporte",
+    editText: "Atualize seus dados, foto e identidade visual do perfil.",
+    pinText: "Troque seu PIN local para manter o acesso protegido.",
+    settingsText: "Ajuste tema, idioma, região, moeda e o plano do app.",
+    supportTitle: "Ajuda e suporte",
+    supportText: "Abra o SAC do app para tirar dúvidas, relatar problemas e acompanhar seus chamados.",
+    lockText: "Bloqueie o app agora e volte a entrar com PIN ou biometria.",
+    resetText: "Apague o acesso local deste aparelho e reinicie o cadastro.",
+  },
+  en: {
+    sectionTitle: "Access, settings and support",
+    editText: "Update your profile details, photo, and visual identity.",
+    pinText: "Change your local PIN to keep access protected.",
+    settingsText: "Adjust theme, language, region, currency, and your plan.",
+    supportTitle: "Help and support",
+    supportText: "Open the in-app support center to ask questions, report issues, and follow your requests.",
+    lockText: "Lock the app now and return with PIN or biometrics.",
+    resetText: "Clear local access from this device and restart signup.",
+  },
+  es: {
+    sectionTitle: "Acceso, ajustes y soporte",
+    editText: "Actualiza tus datos, foto e identidad visual del perfil.",
+    pinText: "Cambia tu PIN local para mantener el acceso protegido.",
+    settingsText: "Ajusta tema, idioma, región, moneda y el plan de la app.",
+    supportTitle: "Ayuda y soporte",
+    supportText: "Abre el centro de soporte de la app para resolver dudas, reportar problemas y seguir tus solicitudes.",
+    lockText: "Bloquea la app ahora y vuelve a entrar con PIN o biometría.",
+    resetText: "Borra el acceso local de este dispositivo y reinicia el registro.",
+  },
+  fr: {
+    sectionTitle: "Accès, réglages et support",
+    editText: "Mettez à jour vos données, votre photo et l'identité visuelle du profil.",
+    pinText: "Changez votre code PIN local pour garder l'accès protégé.",
+    settingsText: "Réglez le thème, la langue, la région, la devise et votre forfait.",
+    supportTitle: "Aide et support",
+    supportText: "Ouvrez le support de l'app pour poser des questions, signaler un problème et suivre vos demandes.",
+    lockText: "Verrouillez l'app maintenant et revenez avec votre PIN ou la biométrie.",
+    resetText: "Effacez l'accès local de cet appareil et recommencez l'inscription.",
+  },
+  it: {
+    sectionTitle: "Accesso, impostazioni e supporto",
+    editText: "Aggiorna i tuoi dati, la foto e l'identità visiva del profilo.",
+    pinText: "Cambia il PIN locale per mantenere l'accesso protetto.",
+    settingsText: "Regola tema, lingua, regione, valuta e il piano dell'app.",
+    supportTitle: "Aiuto e supporto",
+    supportText: "Apri il supporto dell'app per fare domande, segnalare problemi e seguire le tue richieste.",
+    lockText: "Blocca subito l'app e rientra con PIN o biometria.",
+    resetText: "Cancella l'accesso locale da questo dispositivo e ricomincia la registrazione.",
+  },
+} as const;
+
 export default function PerfilScreen() {
-  const { patchAppSettings } = useAppTheme();
+  const { patchAppSettings, colors } = useAppTheme();
   const { language, t } = useAppLanguage();
+  const supportCopy = supportCopyByLanguage[language];
   const insets = useSafeAreaInsets();
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
@@ -273,13 +327,16 @@ export default function PerfilScreen() {
     }, [loadProfile])
   );
 
-  const colors = useMemo(
-    () => getThemeColors(settings.theme, settings.accentColor),
-    [settings.theme, settings.accentColor]
-  );
-
   const goToPremium = useCallback(() => {
     router.push("/assinatura");
+  }, []);
+
+  const goToSettings = useCallback(() => {
+    router.push("/configuracoes");
+  }, []);
+
+  const goToSupport = useCallback(() => {
+    router.push("/ajuda-suporte");
   }, []);
 
   function openEditModal() {
@@ -483,9 +540,9 @@ export default function PerfilScreen() {
     DEFAULT_AVATAR_BORDER_COLOR;
 
   const profileAccent = currentBorderColor;
-  const accentSoft = rgba(profileAccent, settings.theme === "dark" ? 0.16 : 0.1);
-  const accentBorder = rgba(profileAccent, settings.theme === "dark" ? 0.38 : 0.24);
-  const isDark = settings.theme === "dark";
+  const accentSoft = rgba(profileAccent, colors.isDark ? 0.16 : 0.1);
+  const accentBorder = rgba(profileAccent, colors.isDark ? 0.38 : 0.24);
+  const isDark = colors.isDark;
 
   const screenBackground = isDark ? "#090A0C" : colors.background;
   const cardBackground = isDark ? "#0F1115" : colors.surface;
@@ -739,114 +796,231 @@ export default function PerfilScreen() {
         </View>
 
         <Text style={[styles.sectionTitle, { color: textPrimary }]}>
-          {t("perfil.settings")}
+          {supportCopy.sectionTitle}
         </Text>
 
-        <View style={styles.actionList}>
-          <Pressable
-            style={[
-              styles.actionButton,
-              {
-                backgroundColor: colors.accentButtonBackground,
-                borderColor: colors.accentButtonBorder,
-              },
-              colors.isWhiteAccentButton && styles.whiteAccentButton,
-            ]}
-            onPress={openEditModal}
-          >
-            <Text
+        <View
+          style={[
+            styles.infoCard,
+            {
+              backgroundColor: cardBackground,
+              borderColor: uiBorder,
+            },
+          ]}
+        >
+          <View style={styles.actionList}>
+            <Pressable
               style={[
-                styles.actionButtonText,
-                { color: colors.accentButtonText },
+                styles.actionCard,
+                {
+                  backgroundColor: cardBackgroundAlt,
+                  borderColor: uiBorder,
+                },
               ]}
+              onPress={openEditModal}
             >
-              {t("perfil.editProfile")}
-            </Text>
-          </Pressable>
+              <View
+                style={[
+                  styles.actionIconWrap,
+                  {
+                    backgroundColor: accentSoft,
+                    borderColor: accentBorder,
+                  },
+                ]}
+              >
+                <Ionicons name="create-outline" size={18} color={profileAccent} />
+              </View>
 
-          <Pressable
-            style={[
-              styles.actionButton,
-              {
-                backgroundColor: colors.accentButtonBackground,
-                borderColor: colors.accentButtonBorder,
-              },
-              colors.isWhiteAccentButton && styles.whiteAccentButton,
-            ]}
-            onPress={() => setPinModalOpen(true)}
-          >
-            <Text
-              style={[
-                styles.actionButtonText,
-                { color: colors.accentButtonText },
-              ]}
-            >
-              {t("perfil.changePin")}
-            </Text>
-          </Pressable>
+              <View style={styles.actionTextWrap}>
+                <Text style={[styles.actionTitle, { color: textPrimary }]}>
+                  {t("perfil.editProfile")}
+                </Text>
+                <Text style={[styles.actionText, { color: textSecondary }]}>
+                  {supportCopy.editText}
+                </Text>
+              </View>
 
-          <Pressable
-            style={[
-              styles.actionButton,
-              {
-                backgroundColor: colors.accentButtonBackground,
-                borderColor: colors.accentButtonBorder,
-              },
-              colors.isWhiteAccentButton && styles.whiteAccentButton,
-            ]}
-            onPress={() => router.push("/configuracoes")}
-          >
-            <Text
-              style={[
-                styles.actionButtonText,
-                { color: colors.accentButtonText },
-              ]}
-            >
-              {t("perfil.settings")}
-            </Text>
-          </Pressable>
+              <Ionicons name="chevron-forward" size={18} color={textMuted} />
+            </Pressable>
 
-          <Pressable
-            style={[
-              styles.actionButton,
-              {
-                backgroundColor: colors.accentButtonBackground,
-                borderColor: colors.accentButtonBorder,
-              },
-              colors.isWhiteAccentButton && styles.whiteAccentButton,
-            ]}
-            onPress={confirmLockApp}
-          >
-            <Text
+            <Pressable
               style={[
-                styles.actionButtonText,
-                { color: colors.accentButtonText },
+                styles.actionCard,
+                {
+                  backgroundColor: cardBackgroundAlt,
+                  borderColor: uiBorder,
+                },
               ]}
+              onPress={() => setPinModalOpen(true)}
             >
-              {t("perfil.lockNow")}
-            </Text>
-          </Pressable>
+              <View
+                style={[
+                  styles.actionIconWrap,
+                  {
+                    backgroundColor: accentSoft,
+                    borderColor: accentBorder,
+                  },
+                ]}
+              >
+                <Ionicons name="key-outline" size={18} color={profileAccent} />
+              </View>
 
-          <Pressable
-            style={[
-              styles.actionButton,
-              {
-                backgroundColor: colors.accentButtonBackground,
-                borderColor: colors.accentButtonBorder,
-              },
-              colors.isWhiteAccentButton && styles.whiteAccentButton,
-            ]}
-            onPress={resetAllAccess}
-          >
-            <Text
+              <View style={styles.actionTextWrap}>
+                <Text style={[styles.actionTitle, { color: textPrimary }]}>
+                  {t("perfil.changePin")}
+                </Text>
+                <Text style={[styles.actionText, { color: textSecondary }]}>
+                  {supportCopy.pinText}
+                </Text>
+              </View>
+
+              <Ionicons name="chevron-forward" size={18} color={textMuted} />
+            </Pressable>
+
+            <Pressable
               style={[
-                styles.actionButtonText,
-                { color: colors.accentButtonText },
+                styles.actionCard,
+                {
+                  backgroundColor: cardBackgroundAlt,
+                  borderColor: uiBorder,
+                },
               ]}
+              onPress={goToSettings}
             >
-              {t("perfil.eraseLocal")}
-            </Text>
-          </Pressable>
+              <View
+                style={[
+                  styles.actionIconWrap,
+                  {
+                    backgroundColor: accentSoft,
+                    borderColor: accentBorder,
+                  },
+                ]}
+              >
+                <Ionicons name="settings-outline" size={18} color={profileAccent} />
+              </View>
+
+              <View style={styles.actionTextWrap}>
+                <Text style={[styles.actionTitle, { color: textPrimary }]}>
+                  {t("perfil.settings")}
+                </Text>
+                <Text style={[styles.actionText, { color: textSecondary }]}>
+                  {supportCopy.settingsText}
+                </Text>
+              </View>
+
+              <Ionicons name="chevron-forward" size={18} color={textMuted} />
+            </Pressable>
+
+            <Pressable
+              style={[
+                styles.actionCard,
+                {
+                  backgroundColor: cardBackgroundAlt,
+                  borderColor: uiBorder,
+                },
+              ]}
+              onPress={goToSupport}
+            >
+              <View
+                style={[
+                  styles.actionIconWrap,
+                  {
+                    backgroundColor: accentSoft,
+                    borderColor: accentBorder,
+                  },
+                ]}
+              >
+                <Ionicons
+                  name="help-buoy-outline"
+                  size={18}
+                  color={profileAccent}
+                />
+              </View>
+
+              <View style={styles.actionTextWrap}>
+                <Text style={[styles.actionTitle, { color: textPrimary }]}>
+                  {supportCopy.supportTitle}
+                </Text>
+                <Text style={[styles.actionText, { color: textSecondary }]}>
+                  {supportCopy.supportText}
+                </Text>
+              </View>
+
+              <Ionicons name="chevron-forward" size={18} color={textMuted} />
+            </Pressable>
+
+            <Pressable
+              style={[
+                styles.actionCard,
+                {
+                  backgroundColor: cardBackgroundAlt,
+                  borderColor: uiBorder,
+                },
+              ]}
+              onPress={confirmLockApp}
+            >
+              <View
+                style={[
+                  styles.actionIconWrap,
+                  {
+                    backgroundColor: colors.warningSoft,
+                    borderColor: uiBorder,
+                  },
+                ]}
+              >
+                <Ionicons
+                  name="lock-closed-outline"
+                  size={18}
+                  color={colors.warning}
+                />
+              </View>
+
+              <View style={styles.actionTextWrap}>
+                <Text style={[styles.actionTitle, { color: textPrimary }]}>
+                  {t("perfil.lockNow")}
+                </Text>
+                <Text style={[styles.actionText, { color: textSecondary }]}>
+                  {supportCopy.lockText}
+                </Text>
+              </View>
+
+              <Ionicons name="chevron-forward" size={18} color={textMuted} />
+            </Pressable>
+
+            <Pressable
+              style={[
+                styles.actionCard,
+                {
+                  backgroundColor: cardBackgroundAlt,
+                  borderColor: uiBorder,
+                },
+              ]}
+              onPress={resetAllAccess}
+            >
+              <View
+                style={[
+                  styles.actionIconWrap,
+                  {
+                    backgroundColor: colors.dangerSoft,
+                    borderColor: uiBorder,
+                  },
+                ]}
+              >
+                <Ionicons name="trash-outline" size={18} color={colors.danger} />
+              </View>
+
+              <View style={styles.actionTextWrap}>
+                <Text style={[styles.actionTitle, { color: textPrimary }]}>
+                  {t("perfil.eraseLocal")}
+                </Text>
+                <Text style={[styles.actionText, { color: textSecondary }]}>
+                  {supportCopy.resetText}
+                </Text>
+              </View>
+
+              <Ionicons name="chevron-forward" size={18} color={textMuted} />
+            </Pressable>
+          </View>
         </View>
       </ScrollView>
 
@@ -1522,28 +1696,35 @@ const styles = StyleSheet.create({
     fontWeight: "800",
   },
   actionList: {
-    gap: 10,
+    gap: 12,
   },
-  actionButton: {
-    borderRadius: 16,
-    paddingVertical: 16,
-    paddingHorizontal: 14,
+  actionCard: {
+    borderRadius: 18,
     borderWidth: 1,
+    padding: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
   },
-  actionButtonText: {
-    fontSize: 14,
-    fontWeight: "800",
-    textAlign: "center",
+  actionIconWrap: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
   },
-  actionButtonWarningText: {
+  actionTextWrap: {
+    flex: 1,
+  },
+  actionTitle: {
     fontSize: 14,
     fontWeight: "900",
-    textAlign: "center",
   },
-  actionButtonDangerText: {
-    fontSize: 14,
-    fontWeight: "900",
-    textAlign: "center",
+  actionText: {
+    fontSize: 12,
+    lineHeight: 17,
+    marginTop: 4,
   },
   modalBackdrop: {
     flex: 1,

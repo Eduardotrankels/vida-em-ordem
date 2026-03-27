@@ -49,10 +49,15 @@
     },
     "extra": {
       "router": {},
+      "backendBaseUrl": "https://vida-em-ordem.onrender.com",
       "googleAuth": {
         "webClientId": "483688082065-o6qddjhdn8u3d5ndcvhgr3trrka6tu15.apps.googleusercontent.com",
         "androidClientId": "483688082065-htir10amvnmiqebnavs067gt15siq3df.apps.googleusercontent.com",
         "iosClientId": ""
+      },
+      "billing": {
+        "premiumCheckoutUrl": "",
+        "managePlanUrl": ""
       },
       "eas": {
         "projectId": "3ada4ff8-c752-49c3-a7bc-b5d65f74d0e1"

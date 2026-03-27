@@ -84,6 +84,19 @@ export async function getDb() {
       raw_json TEXT
     );
 
+    CREATE TABLE IF NOT EXISTS support_tickets (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      public_id TEXT NOT NULL UNIQUE,
+      user_id TEXT NOT NULL,
+      contact_email TEXT,
+      category TEXT NOT NULL,
+      subject TEXT NOT NULL,
+      message TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'open',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
     CREATE INDEX IF NOT EXISTS idx_users_email
       ON users(email);
 
@@ -113,6 +126,12 @@ export async function getDb() {
 
     CREATE INDEX IF NOT EXISTS idx_user_transactions_account_id
       ON user_transactions(account_id);
+
+    CREATE INDEX IF NOT EXISTS idx_support_tickets_user_id
+      ON support_tickets(user_id);
+
+    CREATE INDEX IF NOT EXISTS idx_support_tickets_status
+      ON support_tickets(status);
   `);
 
   const userColumns = await dbInstance.all(`PRAGMA table_info(users)`);

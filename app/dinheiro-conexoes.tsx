@@ -31,6 +31,7 @@ import {
   formatCurrencyByLanguage,
   formatDateTimeByLanguage,
 } from "./utils/locale";
+import { pushInboxNotification } from "./utils/notificationInbox";
 import { getScreenContentBottomPadding } from "./utils/safeArea";
 import { useAppTheme } from "./utils/themeContext";
 
@@ -223,6 +224,16 @@ export default function DinheiroConexoesScreen() {
         await syncItem(connectionId);
         await loadScreenData();
 
+        await pushInboxNotification({
+          kind: "bank",
+          title: "Sincronizacao concluida",
+          message:
+            "Contas e transacoes foram atualizadas com sucesso no modulo Dinheiro.",
+          actionRoute: "/dinheiro-conexoes",
+          source: "open-finance",
+          sourceId: `bank-sync-${connectionId}-${new Date().toISOString().slice(0, 16)}`,
+        });
+
         Alert.alert(
           "Sincronização concluída 🔄",
           "Contas e transações foram atualizadas com sucesso."
@@ -263,6 +274,17 @@ export default function DinheiroConexoesScreen() {
               try {
                 await deleteItem(connection.id);
                 await loadScreenData();
+
+                await pushInboxNotification({
+                  kind: "bank",
+                  title: "Conexao removida",
+                  message: `${connection.institutionName} foi removido das conexoes bancarias do app.`,
+                  actionRoute: "/dinheiro-conexoes",
+                  source: "open-finance",
+                  sourceId: `bank-remove-${connection.id}-${new Date()
+                    .toISOString()
+                    .slice(0, 16)}`,
+                });
               } catch (error) {
                 console.log("Erro ao remover conexão:", error);
                 Alert.alert("Erro", "Não foi possível remover a conexão.");

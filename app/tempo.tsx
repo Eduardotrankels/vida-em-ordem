@@ -1,6 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { router, useFocusEffect } from "expo-router";
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Alert,
   Pressable,
@@ -13,13 +13,22 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import AppScreenHeader from "../components/AppScreenHeader";
 import GuidedTourOverlay from "../components/GuidedTourOverlay";
+import JourneyInsightCard from "../components/JourneyInsightCard";
 import {
   APP_SETTINGS_KEY,
   AppSettings,
   DEFAULT_SETTINGS,
   getThemeColors,
 } from "./utils/appTheme";
-import { AI_PLAN_KEY, normalizeLifeJourneyPlan } from "./utils/lifeJourney";
+import {
+  AIJourneyProgress,
+  LifeJourneyPlan,
+  normalizeJourneyProgress,
+} from "./utils/lifeJourney";
+import {
+  buildModuleJourneyStatusCard,
+  loadJourneyState,
+} from "./utils/journeyModuleStatus";
 import {
   completeJourneyModuleTour,
   readJourneyModuleTourState,
@@ -128,6 +137,11 @@ export default function TempoScreen() {
   const [taskSuggestions, setTaskSuggestions] = useState<string[]>([]);
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [plan, setPlan] = useState<SubscriptionPlan>("free");
+  const [journeyPlan, setJourneyPlan] = useState<LifeJourneyPlan | null>(null);
+  const [journeyProgress, setJourneyProgress] = useState<AIJourneyProgress>(() =>
+    normalizeJourneyProgress(null)
+  );
+  const [countdownNow, setCountdownNow] = useState(() => Date.now());
   const [showModuleTour, setShowModuleTour] = useState(false);
   const [moduleTourStepIndex, setModuleTourStepIndex] = useState(0);
   const [tourTargets, setTourTargets] = useState<{
@@ -171,6 +185,28 @@ export default function TempoScreen() {
       : moduleTourStepIndex === 1
         ? tourTargets.tasks
         : tourTargets.summary;
+  const moduleJourneyStatusCard = useMemo(
+    () =>
+      buildModuleJourneyStatusCard(
+        "tempo",
+        journeyPlan,
+        journeyProgress,
+        language,
+        countdownNow
+      ),
+    [journeyPlan, journeyProgress, language, countdownNow]
+  );
+
+  useEffect(() => {
+    if (!journeyProgress.nextDayUnlockAt) return;
+
+    setCountdownNow(Date.now());
+    const interval = setInterval(() => {
+      setCountdownNow(Date.now());
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [journeyProgress.nextDayUnlockAt]);
 
   const refreshSuggestions = useCallback(() => {
     setFocusSuggestions(
@@ -189,12 +225,12 @@ export default function TempoScreen() {
 
   const loadData = useCallback(async () => {
     try {
-      const [rawData, rawSettings, planRaw, aiPlanRaw] = await Promise.all([
+      const [rawData, rawSettings, planRaw] = await Promise.all([
         AsyncStorage.getItem(STORAGE_KEY),
         AsyncStorage.getItem(APP_SETTINGS_KEY),
         AsyncStorage.getItem(SUBSCRIPTION_PLAN_KEY),
-        AsyncStorage.getItem(AI_PLAN_KEY),
       ]);
+      const journeyState = await loadJourneyState(language);
 
       const parsedSettings = rawSettings
         ? JSON.parse(rawSettings)
@@ -206,9 +242,15 @@ export default function TempoScreen() {
           : "free";
 
       setPlan(effectivePlan);
+      setJourneyPlan(journeyState.plan);
+      setJourneyProgress(journeyState.progress);
 
       setSettings({
-        theme: parsedSettings?.theme === "light" ? "light" : "dark",
+        theme:
+          parsedSettings?.theme === "light" ||
+          parsedSettings?.theme === "system"
+            ? parsedSettings.theme
+            : "dark",
         accentColor:
           parsedSettings?.accentColor || DEFAULT_SETTINGS.accentColor,
         inactivityLockMinutes:
@@ -219,7 +261,21 @@ export default function TempoScreen() {
             ? parsedSettings.inactivityLockMinutes
             : 0,
         plan: effectivePlan,
+        regionPreference:
+          parsedSettings?.regionPreference || DEFAULT_SETTINGS.regionPreference,
+        currencyPreference:
+          parsedSettings?.currencyPreference ||
+          DEFAULT_SETTINGS.currencyPreference,
       });
+
+      const moduleTourState = await readJourneyModuleTourState();
+
+      if (journeyState.plan?.primaryArea === "tempo" && !moduleTourState.tempo) {
+        setModuleTourStepIndex(0);
+        setShowModuleTour(true);
+      } else {
+        setShowModuleTour(false);
+      }
 
       if (!rawData) {
         setFocus("");
@@ -247,24 +303,14 @@ export default function TempoScreen() {
         .slice(0, effectivePlan === "premium" ? 7 : FREE_HISTORY_DAYS);
 
       setHistory(recentHistory);
-
-      const normalizedPlan = aiPlanRaw
-        ? normalizeLifeJourneyPlan(JSON.parse(aiPlanRaw))
-        : null;
-      const moduleTourState = await readJourneyModuleTourState();
-
-      if (normalizedPlan?.primaryArea === "tempo" && !moduleTourState.tempo) {
-        setModuleTourStepIndex(0);
-        setShowModuleTour(true);
-      } else {
-        setShowModuleTour(false);
-      }
     } catch (error) {
       console.log("Erro ao carregar módulo tempo:", error);
       Alert.alert("Erro", "Não foi possível carregar seus dados de tempo.");
       setShowModuleTour(false);
+      setJourneyPlan(null);
+      setJourneyProgress(normalizeJourneyProgress(null));
     }
-  }, [today]);
+  }, [language, today]);
 
   useFocusEffect(
     useCallback(() => {
@@ -475,6 +521,34 @@ export default function TempoScreen() {
           badgeTone={isPremium ? "success" : "accent"}
           onBadgePress={goToPremium}
         />
+
+        {moduleJourneyStatusCard ? (
+          <JourneyInsightCard
+            eyebrow={moduleJourneyStatusCard.eyebrow}
+            title={moduleJourneyStatusCard.title}
+            text={moduleJourneyStatusCard.text}
+            iconName={moduleJourneyStatusCard.iconName}
+            accentColor={colors.accent}
+            accentSoft={colors.accentSoft}
+            accentBorder={colors.accentBorder}
+            surfaceColor={colors.surface}
+            borderColor={colors.border}
+            textColor={colors.text}
+            textSecondaryColor={colors.textSecondary}
+            buttonBackground={colors.accentButtonBackground}
+            buttonBorder={colors.accentButtonBorder}
+            buttonTextColor={colors.accentButtonText}
+            isWhiteAccentButton={colors.isWhiteAccentButton}
+            timerLabel={moduleJourneyStatusCard.timerLabel}
+            timerValue={moduleJourneyStatusCard.timerValue}
+            actionLabel={moduleJourneyStatusCard.actionLabel}
+            onAction={
+              moduleJourneyStatusCard.actionRoute
+                ? () => router.push(moduleJourneyStatusCard.actionRoute as never)
+                : undefined
+            }
+          />
+        ) : null}
 
         <View
           style={[

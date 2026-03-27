@@ -4,6 +4,7 @@ import React from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useAppLanguage } from "../app/utils/languageContext";
 import { useAppTheme } from "../app/utils/themeContext";
+import NotificationBellButton from "./NotificationBellButton";
 
 type Props = {
   title: string;
@@ -13,6 +14,7 @@ type Props = {
   badgeLabel?: string;
   badgeTone?: "accent" | "success" | "neutral";
   onBadgePress?: () => void;
+  showNotifications?: boolean;
 };
 
 export default function AppScreenHeader({
@@ -23,6 +25,7 @@ export default function AppScreenHeader({
   badgeLabel,
   badgeTone = "accent",
   onBadgePress,
+  showNotifications = true,
 }: Props) {
   const { colors } = useAppTheme();
   const { t } = useAppLanguage();
@@ -37,6 +40,15 @@ export default function AppScreenHeader({
   const glowColor = colors.isDark
     ? `${headerAccent}29`
     : `${headerAccent}14`;
+
+  function handleBackPress() {
+    if (typeof router.canGoBack === "function" && router.canGoBack()) {
+      router.back();
+      return;
+    }
+
+    router.replace("/(tabs)");
+  }
 
   const badgeStyles =
     isFreeBadge
@@ -75,7 +87,7 @@ export default function AppScreenHeader({
               borderColor: uiBorder,
             },
           ]}
-          onPress={() => router.back()}
+          onPress={handleBackPress}
         >
           <Ionicons name="arrow-back" size={16} color={textPrimary} />
           <Text style={[styles.backButtonText, { color: textPrimary }]}>
@@ -110,23 +122,29 @@ export default function AppScreenHeader({
           ) : null}
         </View>
 
-        {badgeLabel ? (
-          <Pressable
-            disabled={!onBadgePress || isFreeBadge}
-            style={[
-              styles.badge,
-              {
-                backgroundColor: badgeStyles.backgroundColor,
-                borderColor: badgeStyles.borderColor,
-                opacity: isFreeBadge ? 0.8 : 1,
-              },
-            ]}
-            onPress={isFreeBadge ? undefined : onBadgePress}
-          >
-            <Text style={[styles.badgeText, { color: badgeStyles.color }]}>
-              {badgeLabel}
-            </Text>
-          </Pressable>
+        {showNotifications || badgeLabel ? (
+          <View style={styles.headerSideActions}>
+            {showNotifications ? <NotificationBellButton /> : null}
+
+            {badgeLabel ? (
+              <Pressable
+                disabled={!onBadgePress || isFreeBadge}
+                style={[
+                  styles.badge,
+                  {
+                    backgroundColor: badgeStyles.backgroundColor,
+                    borderColor: badgeStyles.borderColor,
+                    opacity: isFreeBadge ? 0.8 : 1,
+                  },
+                ]}
+                onPress={isFreeBadge ? undefined : onBadgePress}
+              >
+                <Text style={[styles.badgeText, { color: badgeStyles.color }]}>
+                  {badgeLabel}
+                </Text>
+              </Pressable>
+            ) : null}
+          </View>
         ) : null}
       </View>
     </View>
@@ -156,6 +174,10 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "flex-start",
     gap: 12,
+  },
+  headerSideActions: {
+    alignItems: "flex-end",
+    gap: 8,
   },
   headerMain: {
     flex: 1,

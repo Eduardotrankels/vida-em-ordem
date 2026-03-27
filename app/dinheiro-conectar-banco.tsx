@@ -29,6 +29,7 @@ import {
   formatDateTimeByLanguage,
   getPluggyLanguage,
 } from "./utils/locale";
+import { pushInboxNotification } from "./utils/notificationInbox";
 import { getScreenContentBottomPadding } from "./utils/safeArea";
 import { useAppTheme } from "./utils/themeContext";
 
@@ -294,6 +295,17 @@ export default function DinheiroConectarBancoScreen() {
             item.connector?.name || selectedBank?.name || "Banco"
           } conectado com sucesso.`
         );
+
+        await pushInboxNotification({
+          kind: "bank",
+          title: "Banco conectado",
+          message: `${
+            item.connector?.name || selectedBank?.name || "Banco"
+          } foi conectado com sucesso ao Open Finance do app.`,
+          actionRoute: "/dinheiro-conexoes",
+          source: "open-finance",
+          sourceId: `bank-connected-${String(item.id)}`,
+        });
 
         router.replace("/dinheiro-conexoes");
       } catch (error: any) {

@@ -1,4 +1,4 @@
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import React from "react";
 import {
   Alert,
@@ -10,6 +10,7 @@ import {
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import AppScreenHeader from "../components/AppScreenHeader";
+import { getBillingStatus, openManagePlan, openPremiumCheckout } from "./services/billing";
 import { useAppLanguage } from "./utils/languageContext";
 import { getScreenContentBottomPadding } from "./utils/safeArea";
 import { useAppTheme } from "./utils/themeContext";
@@ -32,6 +33,7 @@ const copyByLanguage = {
     tryPremium: "Testar modo Premium",
     tryFree: "Testar modo Free",
     activeBox: "Você já está com o Premium ativo neste dispositivo.",
+    activeManagePlan: "Gerencie sua assinatura, pagamentos e forma de cobrança com segurança.",
     benefitsTitle: "O que muda no Premium",
     benefits: [
       "Desbloqueie a biblioteca completa de hábitos.",
@@ -105,6 +107,7 @@ const copyByLanguage = {
     tryPremium: "Try Premium mode",
     tryFree: "Try Free mode",
     activeBox: "Premium is already active on this device.",
+    activeManagePlan: "Manage your subscription, payments, and billing details securely.",
     benefitsTitle: "What changes with Premium",
     benefits: [
       "Unlock the full habits library.",
@@ -178,6 +181,8 @@ const copyByLanguage = {
     tryPremium: "Probar modo Premium",
     tryFree: "Probar modo Free",
     activeBox: "Ya tienes Premium activo en este dispositivo.",
+    activeManagePlan:
+      "Gestiona tu suscripción, pagos y datos de cobro de forma segura.",
     benefitsTitle: "Qué cambia con Premium",
     benefits: [
       "Desbloquea la biblioteca completa de hábitos.",
@@ -251,6 +256,8 @@ const copyByLanguage = {
     tryPremium: "Tester le mode Premium",
     tryFree: "Tester le mode Free",
     activeBox: "Vous avez déjà Premium actif sur cet appareil.",
+    activeManagePlan:
+      "Gérez votre abonnement, vos paiements et votre facturation en toute sécurité.",
     benefitsTitle: "Ce qui change avec Premium",
     benefits: [
       "Débloquez la bibliothèque complète d'habitudes.",
@@ -324,6 +331,8 @@ const copyByLanguage = {
     tryPremium: "Prova la modalità Premium",
     tryFree: "Prova la modalità Free",
     activeBox: "Hai già Premium attivo su questo dispositivo.",
+    activeManagePlan:
+      "Gestisci in modo sicuro abbonamento, pagamenti e dettagli di fatturazione.",
     benefitsTitle: "Cosa cambia con Premium",
     benefits: [
       "Sblocca la libreria completa delle abitudini.",
@@ -382,29 +391,77 @@ const copyByLanguage = {
   },
 } as const;
 
+const billingInboxCopy = {
+  pt: {
+    checkoutTitle: "Checkout Premium aberto",
+    checkoutMessage:
+      "Seu checkout externo foi aberto para concluir a assinatura do Vida em Ordem.",
+    manageTitle: "Gerenciamento do plano aberto",
+    manageMessage:
+      "Sua área externa de gerenciamento do plano foi aberta pelo app.",
+  },
+  en: {
+    checkoutTitle: "Premium checkout opened",
+    checkoutMessage:
+      "Your external checkout was opened so you can finish the Vida em Ordem subscription.",
+    manageTitle: "Plan management opened",
+    manageMessage:
+      "Your external plan management area was opened by the app.",
+  },
+  es: {
+    checkoutTitle: "Checkout Premium abierto",
+    checkoutMessage:
+      "Tu checkout externo se abrió para finalizar la suscripción de Vida em Ordem.",
+    manageTitle: "Gestión del plan abierta",
+    manageMessage:
+      "La zona externa de gestión del plan fue abierta por la app.",
+  },
+  fr: {
+    checkoutTitle: "Checkout Premium ouvert",
+    checkoutMessage:
+      "Votre checkout externe a été ouvert pour finaliser l'abonnement Vida em Ordem.",
+    manageTitle: "Gestion du plan ouverte",
+    manageMessage:
+      "L'espace externe de gestion de votre plan a été ouvert par l'app.",
+  },
+  it: {
+    checkoutTitle: "Checkout Premium aperto",
+    checkoutMessage:
+      "Il checkout esterno è stato aperto per completare l'abbonamento a Vida em Ordem.",
+    manageTitle: "Gestione del piano aperta",
+    manageMessage:
+      "L'area esterna di gestione del piano è stata aperta dall'app.",
+  },
+} as const;
+
 export default function PremiumScreen() {
   const insets = useSafeAreaInsets();
   const { colors, settings, patchAppSettings } = useAppTheme();
   const { language, t } = useAppLanguage();
   const copy = copyByLanguage[language];
+  const showDebugPlanActions = __DEV__;
 
   const isPremium = settings.plan === "premium";
 
-  async function ativarPremiumLocal() {
-    try {
-      await patchAppSettings({ plan: "premium" });
+  useFocusEffect(
+    React.useCallback(() => {
+      void (async () => {
+        try {
+          const status = await getBillingStatus();
+          const nextPlan =
+            status.subscription?.plan === "premium" || status.plan === "premium"
+              ? "premium"
+              : "free";
 
-      Alert.alert(copy.enabledTitle, copy.enabledText, [
-        {
-          text: t("common.continue"),
-          onPress: () => router.back(),
-        },
-      ]);
-    } catch (e) {
-      console.log("Erro ao ativar premium:", e);
-      Alert.alert(t("common.error"), copy.enableError);
-    }
-  }
+          if (settings.plan !== nextPlan) {
+            await patchAppSettings({ plan: nextPlan });
+          }
+        } catch (error) {
+          console.log("Erro ao sincronizar plano Premium:", error);
+        }
+      })();
+    }, [patchAppSettings, settings.plan])
+  );
 
   async function desativarPremiumLocal() {
     try {
@@ -415,6 +472,31 @@ export default function PremiumScreen() {
       console.log("Erro ao desativar premium:", e);
       Alert.alert(t("common.error"), copy.disableError);
     }
+  }
+
+  function handleBillingAction() {
+    void (async () => {
+      try {
+        const billingCopy = billingInboxCopy[language];
+
+        if (isPremium) {
+          await openManagePlan({
+            inboxTitle: billingCopy.manageTitle,
+            inboxMessage: billingCopy.manageMessage,
+            actionRoute: "/premium",
+          });
+          return;
+        }
+
+        await openPremiumCheckout({
+          inboxTitle: billingCopy.checkoutTitle,
+          inboxMessage: billingCopy.checkoutMessage,
+          actionRoute: "/premium",
+        });
+      } catch (error: any) {
+        Alert.alert(t("common.error"), error?.message || copy.enableError);
+      }
+    })();
   }
 
   const isDark = settings.theme === "dark";
@@ -493,34 +575,41 @@ export default function PremiumScreen() {
                 },
                 colors.isWhiteAccentButton && styles.whiteAccentButton,
               ]}
-              onPress={ativarPremiumLocal}
+              onPress={handleBillingAction}
             >
               <Text style={[styles.primaryButtonText, { color: colors.accentButtonText }]}>
-                {copy.tryPremium}
+                {copy.activateNow}
               </Text>
             </Pressable>
           ) : (
-            <View
-              style={[
-                styles.activeBox,
-                { backgroundColor: successSoft, borderColor: successBorder },
-              ]}
-            >
-              <Text style={styles.activeBoxText}>{copy.activeBox}</Text>
-            </View>
+            <>
+              <View
+                style={[
+                  styles.activeBox,
+                  { backgroundColor: successSoft, borderColor: successBorder },
+                ]}
+              >
+                <Text style={styles.activeBoxText}>{copy.activeBox}</Text>
+              </View>
+              <Text style={[styles.activeManagePlanText, { color: textSecondary }]}>
+                {copy.activeManagePlan}
+              </Text>
+            </>
           )}
 
-          <Pressable
-            style={[
-              styles.secondaryButton,
-              { backgroundColor: cardBackgroundAlt, borderColor: cardBorder },
-            ]}
-            onPress={desativarPremiumLocal}
-          >
-            <Text style={[styles.secondaryButtonText, { color: textPrimary }]}>
-              {copy.tryFree}
-            </Text>
-          </Pressable>
+          {showDebugPlanActions ? (
+            <Pressable
+              style={[
+                styles.secondaryButton,
+                { backgroundColor: cardBackgroundAlt, borderColor: cardBorder },
+              ]}
+              onPress={desativarPremiumLocal}
+            >
+              <Text style={[styles.secondaryButtonText, { color: textPrimary }]}>
+                {copy.tryFree}
+              </Text>
+            </Pressable>
+          ) : null}
         </View>
 
         <Text style={[styles.sectionTitle, { color: textPrimary }]}>
@@ -627,7 +716,7 @@ export default function PremiumScreen() {
                 },
                 colors.isWhiteAccentButton && styles.whiteAccentButton,
               ]}
-              onPress={ativarPremiumLocal}
+              onPress={handleBillingAction}
             >
               <Text
                 style={[styles.finalCtaButtonText, { color: colors.accentButtonText }]}
@@ -641,9 +730,11 @@ export default function PremiumScreen() {
                 styles.finalCtaButtonSecondary,
                 { backgroundColor: cardBackgroundAlt, borderColor: cardBorder },
               ]}
-              onPress={() => router.back()}
+              onPress={handleBillingAction}
             >
-              <Text style={styles.finalCtaButtonSecondaryText}>{copy.backToHabits}</Text>
+              <Text style={styles.finalCtaButtonSecondaryText}>
+                {t("common.managePlan")}
+              </Text>
             </Pressable>
           )}
         </View>
@@ -775,6 +866,12 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "800",
     lineHeight: 18,
+  },
+
+  activeManagePlanText: {
+    fontSize: 12,
+    lineHeight: 18,
+    marginTop: 10,
   },
 
   sectionTitle: {

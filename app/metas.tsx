@@ -1,9 +1,11 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { router, useFocusEffect } from "expo-router";
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Alert,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -11,14 +13,24 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import AppScreenHeader from "../components/AppScreenHeader";
+import JourneyInsightCard from "../components/JourneyInsightCard";
 import {
   APP_SETTINGS_KEY,
   AppSettings,
   DEFAULT_SETTINGS,
   getThemeColors,
 } from "./utils/appTheme";
+import {
+  AIJourneyProgress,
+  LifeJourneyPlan,
+  normalizeJourneyProgress,
+} from "./utils/lifeJourney";
+import {
+  buildModuleJourneyStatusCard,
+  loadJourneyState,
+} from "./utils/journeyModuleStatus";
 import { useAppLanguage } from "./utils/languageContext";
 import { formatDateByLanguage } from "./utils/locale";
 
@@ -124,10 +136,16 @@ function getDaysRemaining(value: string) {
 
 export default function MetasScreen() {
   const { language } = useAppLanguage();
+  const insets = useSafeAreaInsets();
   const [goals, setGoals] = useState<GoalItem[]>([]);
   const [modalOpen, setModalOpen] = useState(false);
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [plan, setPlan] = useState<SubscriptionPlan>("free");
+  const [journeyPlan, setJourneyPlan] = useState<LifeJourneyPlan | null>(null);
+  const [journeyProgress, setJourneyProgress] = useState<AIJourneyProgress>(() =>
+    normalizeJourneyProgress(null)
+  );
+  const [countdownNow, setCountdownNow] = useState(() => Date.now());
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -161,6 +179,7 @@ export default function MetasScreen() {
         AsyncStorage.getItem(APP_SETTINGS_KEY),
         AsyncStorage.getItem(SUBSCRIPTION_PLAN_KEY),
       ]);
+      const journeyState = await loadJourneyState(language);
 
       const parsedGoals = rawGoals ? JSON.parse(rawGoals) : [];
       const parsedSettings = rawSettings
@@ -174,8 +193,14 @@ export default function MetasScreen() {
 
       setGoals(Array.isArray(parsedGoals) ? parsedGoals : []);
       setPlan(effectivePlan);
+      setJourneyPlan(journeyState.plan);
+      setJourneyProgress(journeyState.progress);
       setSettings({
-        theme: parsedSettings?.theme === "light" ? "light" : "dark",
+        theme:
+          parsedSettings?.theme === "light" ||
+          parsedSettings?.theme === "system"
+            ? parsedSettings.theme
+            : "dark",
         accentColor:
           parsedSettings?.accentColor || DEFAULT_SETTINGS.accentColor,
         inactivityLockMinutes:
@@ -186,11 +211,18 @@ export default function MetasScreen() {
             ? parsedSettings.inactivityLockMinutes
             : 0,
         plan: effectivePlan,
+        regionPreference:
+          parsedSettings?.regionPreference || DEFAULT_SETTINGS.regionPreference,
+        currencyPreference:
+          parsedSettings?.currencyPreference ||
+          DEFAULT_SETTINGS.currencyPreference,
       });
     } catch (error) {
       console.log("Erro ao carregar metas:", error);
+      setJourneyPlan(null);
+      setJourneyProgress(normalizeJourneyProgress(null));
     }
-  }, []);
+  }, [language]);
 
   useFocusEffect(
     useCallback(() => {
@@ -212,6 +244,17 @@ export default function MetasScreen() {
     () => getThemeColors(settings.theme, settings.accentColor),
     [settings.theme, settings.accentColor]
   );
+  const moduleJourneyStatusCard = useMemo(
+    () =>
+      buildModuleJourneyStatusCard(
+        "metas",
+        journeyPlan,
+        journeyProgress,
+        language,
+        countdownNow
+      ),
+    [journeyPlan, journeyProgress, language, countdownNow]
+  );
   const noDeadlineLabel = useMemo(
     () =>
       ({
@@ -228,6 +271,17 @@ export default function MetasScreen() {
       formatDateByLanguage(value, language, undefined, noDeadlineLabel),
     [language, noDeadlineLabel]
   );
+
+  useEffect(() => {
+    if (!journeyProgress.nextDayUnlockAt) return;
+
+    setCountdownNow(Date.now());
+    const interval = setInterval(() => {
+      setCountdownNow(Date.now());
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [journeyProgress.nextDayUnlockAt]);
 
   const surfaceMuted =
     (colors as any).surfaceMuted || colors.surfaceAlt || colors.surface;
@@ -399,6 +453,34 @@ export default function MetasScreen() {
           badgeTone={isPremium ? "success" : "accent"}
           onBadgePress={goToPremium}
         />
+
+        {moduleJourneyStatusCard ? (
+          <JourneyInsightCard
+            eyebrow={moduleJourneyStatusCard.eyebrow}
+            title={moduleJourneyStatusCard.title}
+            text={moduleJourneyStatusCard.text}
+            iconName={moduleJourneyStatusCard.iconName}
+            accentColor={colors.accent}
+            accentSoft={colors.accentSoft}
+            accentBorder={colors.accentBorder}
+            surfaceColor={colors.surface}
+            borderColor={colors.border}
+            textColor={colors.text}
+            textSecondaryColor={colors.textSecondary}
+            buttonBackground={colors.accentButtonBackground}
+            buttonBorder={colors.accentButtonBorder}
+            buttonTextColor={colors.accentButtonText}
+            isWhiteAccentButton={colors.isWhiteAccentButton}
+            timerLabel={moduleJourneyStatusCard.timerLabel}
+            timerValue={moduleJourneyStatusCard.timerValue}
+            actionLabel={moduleJourneyStatusCard.actionLabel}
+            onAction={
+              moduleJourneyStatusCard.actionRoute
+                ? () => router.push(moduleJourneyStatusCard.actionRoute as never)
+                : undefined
+            }
+          />
+        ) : null}
 
         <View style={styles.summaryGrid}>
           <View
@@ -734,16 +816,33 @@ export default function MetasScreen() {
       </ScrollView>
 
       <Modal visible={modalOpen} transparent animationType="slide">
-        <View style={styles.modalBackdrop}>
+        <KeyboardAvoidingView
+          style={styles.modalKeyboardWrap}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+        >
           <View
             style={[
-              styles.modalCard,
-              {
-                backgroundColor: colors.surface,
-                borderColor: colors.border,
-              },
+              styles.modalBackdrop,
+              { paddingBottom: Math.max(insets.bottom, 12) },
             ]}
           >
+            <ScrollView
+              style={[
+                styles.modalCard,
+                {
+                  backgroundColor: colors.surface,
+                  borderColor: colors.border,
+                },
+              ]}
+              contentContainerStyle={[
+                styles.modalCardContent,
+                {
+                  paddingBottom: 18 + Math.max(insets.bottom, 12),
+                },
+              ]}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+            >
             <Text style={[styles.modalTitle, { color: colors.text }]}>
               Nova meta
             </Text>
@@ -922,8 +1021,9 @@ export default function MetasScreen() {
                 Cancelar
               </Text>
             </Pressable>
+            </ScrollView>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </SafeAreaView>
   );
@@ -1227,12 +1327,20 @@ const styles = StyleSheet.create({
     justifyContent: "flex-end",
   },
 
+  modalKeyboardWrap: {
+    flex: 1,
+  },
+
   modalCard: {
     borderTopLeftRadius: 22,
     borderTopRightRadius: 22,
-    padding: 16,
     borderWidth: 1,
     maxHeight: "92%",
+    overflow: "hidden",
+  },
+
+  modalCardContent: {
+    padding: 16,
   },
 
   modalTitle: {

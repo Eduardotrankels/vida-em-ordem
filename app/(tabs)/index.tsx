@@ -15,6 +15,8 @@ import {
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import GuidedTourOverlay from "../../components/GuidedTourOverlay";
+import JourneyInsightCard from "../../components/JourneyInsightCard";
+import NotificationBellButton from "../../components/NotificationBellButton";
 import SubtlePremiumHint from "../../components/SubtlePremiumHint";
 import Svg, {
   Circle,
@@ -23,12 +25,16 @@ import Svg, {
   Text as SvgText,
 } from "react-native-svg";
 import {
-  AI_PLAN_KEY,
   getLifeAreaMeta,
   getLifeAreaLabel,
+  AIJourneyProgress,
   LifeJourneyPlan,
-  normalizeLifeJourneyPlan,
+  normalizeJourneyProgress,
 } from "../utils/lifeJourney";
+import {
+  buildHomeJourneyStatusCard,
+  loadJourneyState,
+} from "../utils/journeyModuleStatus";
 import {
   completeJourneyTourHome,
   readJourneyTourState,
@@ -108,6 +114,8 @@ type AppRoute =
   | "/tempo"
   | "/aprendizado"
   | "/espiritualidade"
+  | "/plano-ia"
+  | "/evolucao-ia"
   | "/perfil"
   | "/assinatura";
 
@@ -1868,6 +1876,9 @@ export default function HomeScreen() {
   const [lifeJourneyPlan, setLifeJourneyPlan] = useState<LifeJourneyPlan | null>(
     null
   );
+  const [lifeJourneyProgress, setLifeJourneyProgress] =
+    useState<AIJourneyProgress>(normalizeJourneyProgress(null));
+  const [journeyCountdownNow, setJourneyCountdownNow] = useState(Date.now());
   const [animatedProgress, setAnimatedProgress] = useState(0);
   const [showDetailedHome, setShowDetailedHome] = useState(false);
   const [showAppTourPrompt, setShowAppTourPrompt] = useState(false);
@@ -1948,14 +1959,12 @@ export default function HomeScreen() {
         billsRaw,
         medsRaw,
         profileRaw,
-        aiPlanRaw,
       ] = await Promise.all([
         AsyncStorage.getItem(HABITS_KEY),
         AsyncStorage.getItem(MONEY_ENTRIES_KEY),
         AsyncStorage.getItem(MONEY_FIXED_BILLS_KEY),
         AsyncStorage.getItem(MEDICATIONS_KEY),
         AsyncStorage.getItem(USER_PROFILE_KEY),
-        AsyncStorage.getItem(AI_PLAN_KEY),
       ]);
 
       const parsedHabits = habitsRaw ? JSON.parse(habitsRaw) : [];
@@ -2017,11 +2026,10 @@ export default function HomeScreen() {
       setFixedBills(normalizedBills);
       setMedications(normalizedMeds);
       setProfile(profileRaw ? JSON.parse(profileRaw) : null);
-      const normalizedPlan = aiPlanRaw
-        ? normalizeLifeJourneyPlan(JSON.parse(aiPlanRaw), language)
-        : null;
+      const journeyState = await loadJourneyState(language);
 
-      setLifeJourneyPlan(normalizedPlan);
+      setLifeJourneyPlan(journeyState.plan);
+      setLifeJourneyProgress(journeyState.progress);
 
       await readJourneyTourState();
       const appIntroState = await readAppIntroTourState();
@@ -2030,7 +2038,7 @@ export default function HomeScreen() {
       setShowJourneyTour(false);
       setShowAppTourPrompt(
         Boolean(
-          normalizedPlan &&
+          journeyState.plan &&
             !appIntroState.prompted &&
             !appIntroState.completed &&
             !appIntroState.skipped
@@ -2044,6 +2052,7 @@ export default function HomeScreen() {
       setMedications([]);
       setProfile(null);
       setLifeJourneyPlan(null);
+      setLifeJourneyProgress(normalizeJourneyProgress(null));
       setShowAppTourPrompt(false);
       setShowJourneyTourInvite(false);
       setShowJourneyTour(false);
@@ -2055,6 +2064,19 @@ export default function HomeScreen() {
       loadDashboardData();
     }, [loadDashboardData])
   );
+
+  useEffect(() => {
+    const hasCountdown = Boolean(lifeJourneyProgress.nextDayUnlockAt);
+    if (!hasCountdown) {
+      return;
+    }
+
+    const timer = setInterval(() => {
+      setJourneyCountdownNow(Date.now());
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [lifeJourneyProgress.nextDayUnlockAt]);
 
   const today = useMemo(() => todayKey(), []);
   const currentPeriod = useMemo(() => getCurrentPeriodKey(), []);
@@ -2381,6 +2403,17 @@ export default function HomeScreen() {
   const aiJourneyCardCopy = useMemo(
     () => getAiJourneyCardCopy(lifeJourneyPlan, language),
     [language, lifeJourneyPlan]
+  );
+
+  const homeJourneyStatusCard = useMemo(
+    () =>
+      buildHomeJourneyStatusCard(
+        lifeJourneyPlan,
+        lifeJourneyProgress,
+        language,
+        journeyCountdownNow
+      ),
+    [language, lifeJourneyPlan, lifeJourneyProgress, journeyCountdownNow]
   );
 
   const microVictoryText = useMemo(
@@ -2871,6 +2904,8 @@ export default function HomeScreen() {
               </View>
 
               <View style={styles.headerActions}>
+                <NotificationBellButton />
+
                 {isPremium ? (
                   <ScaleButton onPress={goToPremium}>
                     <View
@@ -3118,6 +3153,36 @@ export default function HomeScreen() {
                 ) : null}
               </View>
             </View>
+          </Animated.View>
+        ) : null}
+
+        {homeJourneyStatusCard ? (
+          <Animated.View style={getSectionAnimatedStyle(3.25)}>
+            <JourneyInsightCard
+              eyebrow={homeJourneyStatusCard.eyebrow}
+              title={homeJourneyStatusCard.title}
+              text={homeJourneyStatusCard.text}
+              iconName={homeJourneyStatusCard.iconName}
+              accentColor={homeAccent}
+              accentSoft={homeAccentSoft}
+              accentBorder={homeAccentBorder}
+              surfaceColor={homeSurface}
+              borderColor={homeBorder}
+              textColor={colors.text}
+              textSecondaryColor={colors.textSecondary}
+              buttonBackground={colors.accentButtonBackground}
+              buttonBorder={colors.accentButtonBorder}
+              buttonTextColor={primaryButtonTextColor}
+              isWhiteAccentButton={colors.isWhiteAccentButton}
+              timerLabel={homeJourneyStatusCard.timerLabel}
+              timerValue={homeJourneyStatusCard.timerValue}
+              actionLabel={homeJourneyStatusCard.actionLabel}
+              onAction={
+                homeJourneyStatusCard.actionRoute
+                  ? () => router.push(homeJourneyStatusCard.actionRoute as AppRoute)
+                  : undefined
+              }
+            />
           </Animated.View>
         ) : null}
 

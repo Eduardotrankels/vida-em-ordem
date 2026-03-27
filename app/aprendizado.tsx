@@ -1,6 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { router, useFocusEffect } from "expo-router";
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Alert,
   Pressable,
@@ -12,12 +12,22 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import AppScreenHeader from "../components/AppScreenHeader";
+import JourneyInsightCard from "../components/JourneyInsightCard";
 import {
   APP_SETTINGS_KEY,
   AppSettings,
   DEFAULT_SETTINGS,
   getThemeColors,
 } from "./utils/appTheme";
+import {
+  AIJourneyProgress,
+  LifeJourneyPlan,
+  normalizeJourneyProgress,
+} from "./utils/lifeJourney";
+import {
+  buildModuleJourneyStatusCard,
+  loadJourneyState,
+} from "./utils/journeyModuleStatus";
 import { useAppLanguage } from "./utils/languageContext";
 import { formatDateByLanguage } from "./utils/locale";
 
@@ -86,6 +96,11 @@ export default function AprendizadoScreen() {
   const { language } = useAppLanguage();
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [plan, setPlan] = useState<SubscriptionPlan>("free");
+  const [journeyPlan, setJourneyPlan] = useState<LifeJourneyPlan | null>(null);
+  const [journeyProgress, setJourneyProgress] = useState<AIJourneyProgress>(() =>
+    normalizeJourneyProgress(null)
+  );
+  const [countdownNow, setCountdownNow] = useState(() => Date.now());
 
   const [objective, setObjective] = useState("");
   const [task1, setTask1] = useState("");
@@ -118,6 +133,28 @@ export default function AprendizadoScreen() {
     () => getThemeColors(settings.theme, settings.accentColor),
     [settings.theme, settings.accentColor]
   );
+  const moduleJourneyStatusCard = useMemo(
+    () =>
+      buildModuleJourneyStatusCard(
+        "aprendizado",
+        journeyPlan,
+        journeyProgress,
+        language,
+        countdownNow
+      ),
+    [journeyPlan, journeyProgress, language, countdownNow]
+  );
+
+  useEffect(() => {
+    if (!journeyProgress.nextDayUnlockAt) return;
+
+    setCountdownNow(Date.now());
+    const interval = setInterval(() => {
+      setCountdownNow(Date.now());
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [journeyProgress.nextDayUnlockAt]);
 
   const goToPremium = useCallback(() => {
     router.push("/assinatura");
@@ -148,6 +185,7 @@ export default function AprendizadoScreen() {
         AsyncStorage.getItem(APP_SETTINGS_KEY),
         AsyncStorage.getItem(SUBSCRIPTION_PLAN_KEY),
       ]);
+      const journeyState = await loadJourneyState(language);
 
       const parsedSettings = settingsRaw
         ? JSON.parse(settingsRaw)
@@ -159,9 +197,15 @@ export default function AprendizadoScreen() {
           : "free";
 
       setPlan(effectivePlan);
+      setJourneyPlan(journeyState.plan);
+      setJourneyProgress(journeyState.progress);
 
       setSettings({
-        theme: parsedSettings?.theme === "light" ? "light" : "dark",
+        theme:
+          parsedSettings?.theme === "light" ||
+          parsedSettings?.theme === "system"
+            ? parsedSettings.theme
+            : "dark",
         accentColor:
           parsedSettings?.accentColor || DEFAULT_SETTINGS.accentColor,
         inactivityLockMinutes:
@@ -172,6 +216,11 @@ export default function AprendizadoScreen() {
             ? parsedSettings.inactivityLockMinutes
             : 0,
         plan: effectivePlan,
+        regionPreference:
+          parsedSettings?.regionPreference || DEFAULT_SETTINGS.regionPreference,
+        currencyPreference:
+          parsedSettings?.currencyPreference ||
+          DEFAULT_SETTINGS.currencyPreference,
       });
 
       if (!raw) {
@@ -203,8 +252,10 @@ export default function AprendizadoScreen() {
     } catch (error) {
       console.log("Erro ao carregar módulo aprendizado:", error);
       Alert.alert("Erro", "Não foi possível carregar seus dados de aprendizado.");
+      setJourneyPlan(null);
+      setJourneyProgress(normalizeJourneyProgress(null));
     }
-  }, [today]);
+  }, [language, today]);
 
   useFocusEffect(
     useCallback(() => {
@@ -399,6 +450,34 @@ export default function AprendizadoScreen() {
           badgeTone={isPremium ? "success" : "accent"}
           onBadgePress={goToPremium}
         />
+
+        {moduleJourneyStatusCard ? (
+          <JourneyInsightCard
+            eyebrow={moduleJourneyStatusCard.eyebrow}
+            title={moduleJourneyStatusCard.title}
+            text={moduleJourneyStatusCard.text}
+            iconName={moduleJourneyStatusCard.iconName}
+            accentColor={colors.accent}
+            accentSoft={colors.accentSoft}
+            accentBorder={colors.accentBorder}
+            surfaceColor={colors.surface}
+            borderColor={colors.border}
+            textColor={colors.text}
+            textSecondaryColor={colors.textSecondary}
+            buttonBackground={colors.accentButtonBackground}
+            buttonBorder={colors.accentButtonBorder}
+            buttonTextColor={colors.accentButtonText}
+            isWhiteAccentButton={colors.isWhiteAccentButton}
+            timerLabel={moduleJourneyStatusCard.timerLabel}
+            timerValue={moduleJourneyStatusCard.timerValue}
+            actionLabel={moduleJourneyStatusCard.actionLabel}
+            onAction={
+              moduleJourneyStatusCard.actionRoute
+                ? () => router.push(moduleJourneyStatusCard.actionRoute as never)
+                : undefined
+            }
+          />
+        ) : null}
 
         <View
           style={[

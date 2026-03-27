@@ -1084,6 +1084,129 @@ async function getUserTransactions(userId, filters = {}) {
   return db.all(query, params);
 }
 
+function buildSupportTicketId() {
+  return `ticket_${Date.now().toString(36)}${Math.random()
+    .toString(36)
+    .slice(2, 8)}`;
+}
+
+function normalizeSupportText(value) {
+  if (typeof value !== "string") {
+    return "";
+  }
+
+  return value.trim();
+}
+
+function normalizeSupportCategory(value) {
+  const normalized = normalizeSupportText(value).toLowerCase();
+
+  if (
+    normalized === "billing" ||
+    normalized === "bank" ||
+    normalized === "account" ||
+    normalized === "bug" ||
+    normalized === "suggestion"
+  ) {
+    return normalized;
+  }
+
+  return "app";
+}
+
+async function createSupportTicket({
+  userId,
+  contactEmail = null,
+  category,
+  subject,
+  message,
+}) {
+  const db = await getDb();
+  const publicId = buildSupportTicketId();
+  const createdAt = new Date().toISOString();
+  const normalizedEmail = normalizeSupportText(contactEmail) || null;
+  const normalizedCategory = normalizeSupportCategory(category);
+  const normalizedSubject = normalizeSupportText(subject);
+  const normalizedMessage = normalizeSupportText(message);
+
+  await db.run(
+    `
+      INSERT INTO support_tickets (
+        public_id,
+        user_id,
+        contact_email,
+        category,
+        subject,
+        message,
+        status,
+        created_at,
+        updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `,
+    [
+      publicId,
+      String(userId),
+      normalizedEmail,
+      normalizedCategory,
+      normalizedSubject,
+      normalizedMessage,
+      "open",
+      createdAt,
+      createdAt,
+    ]
+  );
+
+  return getSupportTicketByPublicId(publicId);
+}
+
+async function getSupportTicketByPublicId(publicId) {
+  const db = await getDb();
+
+  return db.get(
+    `
+      SELECT
+        public_id as publicId,
+        user_id as userId,
+        contact_email as contactEmail,
+        category,
+        subject,
+        message,
+        status,
+        created_at as createdAt,
+        updated_at as updatedAt
+      FROM support_tickets
+      WHERE public_id = ?
+    `,
+    [String(publicId)]
+  );
+}
+
+async function listSupportTickets(userId, limit = 12) {
+  const db = await getDb();
+  const safeLimit = Math.max(1, Math.min(Number(limit) || 12, 30));
+
+  return db.all(
+    `
+      SELECT
+        public_id as publicId,
+        user_id as userId,
+        contact_email as contactEmail,
+        category,
+        subject,
+        message,
+        status,
+        created_at as createdAt,
+        updated_at as updatedAt
+      FROM support_tickets
+      WHERE user_id = ?
+      ORDER BY datetime(created_at) DESC
+      LIMIT ?
+    `,
+    [String(userId), safeLimit]
+  );
+}
+
 async function syncItemDataForUser(userId, itemId) {
   const itemData = await pluggyRequest("get", `/items/${itemId}`);
 
@@ -1599,6 +1722,72 @@ app.get("/api/app/transactions", ensureUserId, async (req, res) => {
       }),
     });
   } catch (error) {
+    res.status(500).json({
+      error: safeErrorMessage(error),
+    });
+  }
+});
+
+app.get("/api/support/tickets", ensureUserId, async (req, res) => {
+  try {
+    const limit = req.query.limit ? Number(req.query.limit) : 12;
+
+    res.json({
+      ok: true,
+      tickets: await listSupportTickets(req.userId, limit),
+    });
+  } catch (error) {
+    console.error("Erro ao listar chamados de suporte:", error);
+    res.status(500).json({
+      error: safeErrorMessage(error),
+    });
+  }
+});
+
+app.post("/api/support/tickets", ensureUserId, async (req, res) => {
+  try {
+    const { contactEmail = null, category, subject, message } = req.body || {};
+    const normalizedSubject = normalizeSupportText(subject);
+    const normalizedMessage = normalizeSupportText(message);
+
+    if (!normalizedSubject) {
+      return res.status(400).json({
+        error: "O assunto do chamado é obrigatório.",
+      });
+    }
+
+    if (normalizedSubject.length < 6) {
+      return res.status(400).json({
+        error: "Descreva um assunto um pouco mais claro para o suporte.",
+      });
+    }
+
+    if (!normalizedMessage) {
+      return res.status(400).json({
+        error: "A mensagem do chamado é obrigatória.",
+      });
+    }
+
+    if (normalizedMessage.length < 12) {
+      return res.status(400).json({
+        error: "Conte um pouco mais sobre o que aconteceu para o suporte conseguir ajudar.",
+      });
+    }
+
+    const ticket = await createSupportTicket({
+      userId: req.userId,
+      contactEmail,
+      category,
+      subject: normalizedSubject,
+      message: normalizedMessage,
+    });
+
+    res.status(201).json({
+      ok: true,
+      ticket,
+    });
+  } catch (error) {
+    console.error("Erro ao criar chamado de suporte:", error);
     res.status(500).json({
       error: safeErrorMessage(error),
     });

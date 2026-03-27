@@ -1,4 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as Notifications from "expo-notifications";
 import { Stack, router, usePathname, useSegments } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
 import {
@@ -19,7 +20,13 @@ import {
 } from "./utils/appLock";
 import { resetGoogleNativeSignInSession } from "./utils/googleNativeAuth";
 import { LanguageProvider, useAppLanguage } from "./utils/languageContext";
-import { AI_ONBOARDING_KEY } from "./utils/lifeJourney";
+import {
+  AI_JOURNEY_PROGRESS_KEY,
+  AI_ONBOARDING_KEY,
+  AI_PLAN_KEY,
+  buildLifeJourneyPlan,
+} from "./utils/lifeJourney";
+import { pushInboxNotification } from "./utils/notificationInbox";
 import { ThemeProvider, useAppTheme } from "./utils/themeContext";
 import {
   APP_WELCOME_SEEN_KEY,
@@ -32,9 +39,12 @@ const APP_UNLOCKED_KEY = "@vida_em_ordem_app_unlocked_v1";
 const DEV_RESET_MARKER_KEY = "@vida_em_ordem_dev_reset_marker_v1";
 const DEV_WELCOME_RESET_MARKER_KEY = "@vida_em_ordem_dev_welcome_reset_marker_v1";
 const DEV_GOOGLE_RESET_MARKER_KEY = "@vida_em_ordem_dev_google_reset_marker_v1";
+const DEV_AI_JOURNEY_RESET_MARKER_KEY =
+  "@vida_em_ordem_dev_ai_journey_reset_marker_v1";
 const FORCE_FRESH_ACCESS_TOKEN = "2026-03-23-fresh-access-reset-6";
 const FORCE_WELCOME_RESET_TOKEN = "2026-03-24-welcome-reset-2";
 const FORCE_GOOGLE_SIGNUP_RESET_TOKEN = "2026-03-25-google-signup-reset-2";
+const FORCE_AI_JOURNEY_RESET_TOKEN = "2026-03-25-ai-journey-reset-1";
 
 function RootNavigator() {
   const segments = useSegments();
@@ -42,7 +52,7 @@ function RootNavigator() {
   const [ready, setReady] = useState(false);
   const [resetComplete, setResetComplete] = useState(false);
   const { colors, isThemeReady } = useAppTheme();
-  const { isLanguageReady, t } = useAppLanguage();
+  const { language, isLanguageReady, t } = useAppLanguage();
 
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
   const throttleRef = useRef(0);
@@ -157,6 +167,51 @@ function RootNavigator() {
   }, []);
 
   useEffect(() => {
+    if (!__DEV__ || !isLanguageReady) {
+      return;
+    }
+
+    async function ensureAiJourneyReset() {
+      try {
+        const currentMarker = await AsyncStorage.getItem(
+          DEV_AI_JOURNEY_RESET_MARKER_KEY
+        );
+
+        if (currentMarker === FORCE_AI_JOURNEY_RESET_TOKEN) {
+          return;
+        }
+
+        const onboardingRaw = await AsyncStorage.getItem(AI_ONBOARDING_KEY);
+
+        await AsyncStorage.multiRemove([
+          AI_PLAN_KEY,
+          AI_JOURNEY_PROGRESS_KEY,
+          "@vida_em_ordem_ai_rewards_v1",
+          "@vida_em_ordem_ai_weekly_checkin_v1",
+        ]);
+
+        if (onboardingRaw) {
+          const parsedAnswers = JSON.parse(onboardingRaw);
+          const { createdAt: _createdAt, ...answersWithoutDate } =
+            parsedAnswers ?? {};
+          const rebuiltPlan = buildLifeJourneyPlan(answersWithoutDate, language);
+
+          await AsyncStorage.setItem(AI_PLAN_KEY, JSON.stringify(rebuiltPlan));
+        }
+
+        await AsyncStorage.setItem(
+          DEV_AI_JOURNEY_RESET_MARKER_KEY,
+          FORCE_AI_JOURNEY_RESET_TOKEN
+        );
+      } catch (error) {
+        console.log("Erro ao resetar jornada da IA em dev:", error);
+      }
+    }
+
+    void ensureAiJourneyReset();
+  }, [isLanguageReady, language]);
+
+  useEffect(() => {
     if (!resetComplete) return;
 
     async function checkAccess() {
@@ -182,6 +237,7 @@ function RootNavigator() {
         const inConfigurarAcesso = firstSegment === "configurar-acesso";
         const inBloqueio = firstSegment === "bloqueio";
         const inAiOnboarding = firstSegment === "onboarding-ia";
+        const inBillingFlow = firstSegment === "billing";
 
         if (!startupLockHandledRef.current) {
           startupLockHandledRef.current = true;
@@ -194,6 +250,9 @@ function RootNavigator() {
 
         const allowedWhenUnlocked = [
           "(tabs)",
+          "alertas",
+          "ajuda-suporte",
+          "billing",
           "perfil",
           "configuracoes",
           "dinheiro",
@@ -249,6 +308,10 @@ function RootNavigator() {
         } else if (unlockedRaw !== "true") {
           stopInactivityWatcher();
 
+          if (inBillingFlow) {
+            return;
+          }
+
           if (!inBloqueio) {
             router.replace("/bloqueio");
             return;
@@ -288,6 +351,7 @@ function RootNavigator() {
       pathname === "/configurar-acesso" ||
       pathname === "/bloqueio" ||
       pathname === "/onboarding-ia" ||
+      pathname.startsWith("/billing/") ||
       !pathname;
 
     if (isPublicRoute) {
@@ -330,10 +394,11 @@ function RootNavigator() {
       appStateRef.current = nextState;
 
       if (
-        pathname === "/welcome" ||
-        pathname === "/cadastro" ||
-        pathname === "/configurar-acesso" ||
-        pathname === "/bloqueio"
+      pathname === "/welcome" ||
+      pathname === "/cadastro" ||
+      pathname === "/configurar-acesso" ||
+      pathname === "/bloqueio" ||
+      pathname.startsWith("/billing/")
       ) {
         return;
       }
@@ -378,6 +443,60 @@ function RootNavigator() {
       subscription.remove();
     };
   }, [pathname]);
+
+  useEffect(() => {
+    const receivedSubscription = Notifications.addNotificationReceivedListener(
+      (notification) => {
+        const { title, body, data } = notification.request.content;
+
+        void pushInboxNotification({
+          kind:
+            typeof data?.kind === "string" &&
+            ["app", "external", "journey", "bank", "billing"].includes(
+              data.kind
+            )
+              ? (data.kind as any)
+              : "external",
+          title: title || "Notificação",
+          message: body || "Você recebeu um novo alerta.",
+          sourceId: notification.request.identifier,
+          source:
+            typeof data?.source === "string" ? data.source : "external",
+          actionRoute:
+            typeof data?.route === "string" ? (data.route as any) : "/alertas",
+          isExternal: true,
+        });
+      }
+    );
+
+    const responseSubscription =
+      Notifications.addNotificationResponseReceivedListener((response) => {
+        const { title, body, data } = response.notification.request.content;
+
+        void pushInboxNotification({
+          kind:
+            typeof data?.kind === "string" &&
+            ["app", "external", "journey", "bank", "billing"].includes(
+              data.kind
+            )
+              ? (data.kind as any)
+              : "external",
+          title: title || "Notificação",
+          message: body || "Você recebeu um novo alerta.",
+          sourceId: response.notification.request.identifier,
+          source:
+            typeof data?.source === "string" ? data.source : "external",
+          actionRoute:
+            typeof data?.route === "string" ? (data.route as any) : "/alertas",
+          isExternal: true,
+        });
+      });
+
+    return () => {
+      receivedSubscription.remove();
+      responseSubscription.remove();
+    };
+  }, []);
 
   function handleLightInteraction() {
     if (
@@ -435,6 +554,10 @@ function RootNavigator() {
         }}
       >
         <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="alertas" />
+        <Stack.Screen name="ajuda-suporte" />
+        <Stack.Screen name="billing/success" />
+        <Stack.Screen name="billing/cancel" />
         <Stack.Screen name="welcome" />
         <Stack.Screen name="cadastro" />
         <Stack.Screen name="configurar-acesso" />

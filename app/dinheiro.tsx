@@ -3,7 +3,9 @@ import { router, useFocusEffect } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Alert,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -96,7 +98,9 @@ type FilterPeriod = "month" | "3months" | "6months" | "all";
 type MoneyJourneyAction =
   | "entry"
   | "bill"
+  | "plan"
   | "goals"
+  | "health"
   | "learning"
   | "time"
   | "work"
@@ -275,6 +279,7 @@ const moneyDeepUiCopyByLanguage = {
     emptyDetailTitle: "Sem lançamentos",
     emptyDetailText: "Essa categoria ainda não possui movimentações.",
     newEntryTitle: "Nova movimentação",
+    editEntryTitle: "Editar movimentação",
     freeLimitRealtimeTitle: "Limite Free em tempo real",
     manualUsageText: (used: number, limit: number) =>
       `Você usou ${used} de ${limit} lançamentos manuais.`,
@@ -373,6 +378,7 @@ const moneyDeepUiCopyByLanguage = {
     emptyDetailTitle: "No entries",
     emptyDetailText: "This category does not have transactions yet.",
     newEntryTitle: "New transaction",
+    editEntryTitle: "Edit transaction",
     freeLimitRealtimeTitle: "Real-time Free limit",
     manualUsageText: (used: number, limit: number) =>
       `You have used ${used} of ${limit} manual entries.`,
@@ -471,6 +477,7 @@ const moneyDeepUiCopyByLanguage = {
     emptyDetailTitle: "Sin movimientos",
     emptyDetailText: "Esta categoría todavía no tiene movimientos.",
     newEntryTitle: "Nuevo movimiento",
+    editEntryTitle: "Editar movimiento",
     freeLimitRealtimeTitle: "Límite Free en tiempo real",
     manualUsageText: (used: number, limit: number) =>
       `Has usado ${used} de ${limit} movimientos manuales.`,
@@ -569,6 +576,7 @@ const moneyDeepUiCopyByLanguage = {
     emptyDetailTitle: "Aucun mouvement",
     emptyDetailText: "Cette catégorie ne possède pas encore de mouvements.",
     newEntryTitle: "Nouveau mouvement",
+    editEntryTitle: "Modifier le mouvement",
     freeLimitRealtimeTitle: "Limite Free en temps réel",
     manualUsageText: (used: number, limit: number) =>
       `Vous avez utilisé ${used} sur ${limit} mouvements manuels.`,
@@ -669,6 +677,7 @@ const moneyDeepUiCopyByLanguage = {
     emptyDetailTitle: "Nessun movimento",
     emptyDetailText: "Questa categoria non ha ancora movimenti.",
     newEntryTitle: "Nuovo movimento",
+    editEntryTitle: "Modifica movimento",
     freeLimitRealtimeTitle: "Limite Free in tempo reale",
     manualUsageText: (used: number, limit: number) =>
       `Hai usato ${used} di ${limit} movimenti manuali.`,
@@ -1566,6 +1575,7 @@ export default function DinheiroScreen() {
 
   const [modalOpen, setModalOpen] = useState(false);
   const [fixedBillModalOpen, setFixedBillModalOpen] = useState(false);
+  const [editingEntry, setEditingEntry] = useState<MoneyEntry | null>(null);
   const [editingBill, setEditingBill] = useState<FixedBill | null>(null);
   const [isHydrated, setIsHydrated] = useState(false);
   const [showModuleTour, setShowModuleTour] = useState(false);
@@ -1727,6 +1737,10 @@ export default function DinheiroScreen() {
 
       if (evaluatedJourney?.plan) {
         await AsyncStorage.setItem(
+          AI_PLAN_KEY,
+          JSON.stringify(evaluatedJourney.plan)
+        );
+        await AsyncStorage.setItem(
           AI_JOURNEY_PROGRESS_KEY,
           JSON.stringify(evaluatedJourney.progress)
         );
@@ -1845,6 +1859,14 @@ export default function DinheiroScreen() {
       return null;
     }
 
+    const highestCompletedDay =
+      journeyProgress.completedDays.length > 0
+        ? journeyProgress.completedDays[journeyProgress.completedDays.length - 1]
+        : 0;
+    const waitingForNextRelease =
+      Boolean(journeyProgress.nextDayUnlockAt) &&
+      highestCompletedDay > 0 &&
+      highestCompletedDay < journeyPlan.journeyDays.length;
     const currentDay =
       journeyPlan.journeyDays[journeyProgress.currentDay - 1] ?? null;
 
@@ -1867,8 +1889,30 @@ export default function DinheiroScreen() {
       ? Math.max(0, fixedBillsTask.targetValue - fixedBillsTask.currentValue)
       : 0;
     const totalDays = journeyPlan.journeyDays.length;
+    const nextUnlockLabel = journeyProgress.nextDayUnlockAt
+      ? new Intl.DateTimeFormat(language === "pt" ? "pt-BR" : language, {
+          hour: "2-digit",
+          minute: "2-digit",
+          day: "2-digit",
+          month: "2-digit",
+        }).format(new Date(journeyProgress.nextDayUnlockAt))
+      : null;
 
     const moduleLabels = {
+      money: {
+        pt: "Dinheiro",
+        en: "Money",
+        es: "Dinero",
+        fr: "Argent",
+        it: "Denaro",
+      },
+      health: {
+        pt: "Saúde",
+        en: "Health",
+        es: "Salud",
+        fr: "Santé",
+        it: "Salute",
+      },
       goals: {
         pt: "Metas",
         en: "Goals",
@@ -1928,25 +1972,61 @@ export default function DinheiroScreen() {
     } as const;
 
     const moduleByValidationType = {
+      money_entries_today: {
+        action: "entry",
+        label: moduleLabels.money[language],
+      },
+      goals_today: {
+        action: "goals",
+        label: moduleLabels.goals[language],
+      },
       goals_total: {
         action: "goals",
         label: moduleLabels.goals[language],
+      },
+      medications_total: {
+        action: "health",
+        label: moduleLabels.health[language],
+      },
+      medications_taken_today: {
+        action: "health",
+        label: moduleLabels.health[language],
+      },
+      learning_today: {
+        action: "learning",
+        label: moduleLabels.learning[language],
       },
       learning_items_total: {
         action: "learning",
         label: moduleLabels.learning[language],
       },
+      time_today: {
+        action: "time",
+        label: moduleLabels.time[language],
+      },
       time_items_total: {
         action: "time",
         label: moduleLabels.time[language],
+      },
+      work_today: {
+        action: "work",
+        label: moduleLabels.work[language],
       },
       work_items_total: {
         action: "work",
         label: moduleLabels.work[language],
       },
+      leisure_today: {
+        action: "leisure",
+        label: moduleLabels.leisure[language],
+      },
       leisure_items_total: {
         action: "leisure",
         label: moduleLabels.leisure[language],
+      },
+      spiritual_today: {
+        action: "spiritual",
+        label: moduleLabels.spiritual[language],
       },
       checkin_today: {
         action: "checkin",
@@ -1966,10 +2046,43 @@ export default function DinheiroScreen() {
       },
     } as const;
 
+    const currentDayModules = currentDay.tasks.reduce<string[]>((acc, task) => {
+      const module =
+        moduleByValidationType[
+          task.validationType as keyof typeof moduleByValidationType
+        ];
+
+      if (!module || acc.includes(module.label)) {
+        return acc;
+      }
+
+      return [...acc, module.label];
+    }, []);
+
+    const connectedModulesLabel =
+      currentDayModules.length > 0
+        ? currentDayModules.join(" • ")
+        : {
+            pt: "os outros módulos da sua vida",
+            en: "the other areas of your life",
+            es: "las otras áreas de tu vida",
+            fr: "les autres domaines de votre vie",
+            it: "le altre aree della tua vita",
+          }[language];
+
     const copyByLanguage = {
       pt: {
         eyebrow: (day: number, total: number) =>
           `Jornada financeira • Dia ${day}/${total}`,
+        waitingHeader: (label: string) =>
+          `Seu dia atual já foi concluído. A IA está lendo tudo o que você preencheu e libera o próximo passo a partir de ${label}.`,
+        waitingHeroTitle: "A IA está programando o próximo dia",
+        waitingHeroSubtitle:
+          "As próximas tarefas só aparecem na virada do dia. Até lá, o app transforma o que você alimentou em direção prática.",
+        waitingCtaTitle: "Volte pelo plano da jornada",
+        waitingCtaText:
+          "Enquanto o próximo dia não for liberado, você pode revisar sua evolução e esperar a próxima virada com calma.",
+        waitingButtonLabel: "Ver plano da jornada",
         dayOneHeader:
           "Hoje o app precisa da sua base financeira: comece pelas contas fixas e pelos primeiros movimentos reais do mês.",
         dayOneHeroTitle: "Sua base financeira começa aqui",
@@ -1979,6 +2092,16 @@ export default function DinheiroScreen() {
           "Sua base já começou. Agora registre entradas e saídas reais para a IA começar a ler o seu fluxo financeiro.",
         dayOneEntriesSubtitle: (entries: number) =>
           `Faltam ${entries} movimentação(ões) para fechar a leitura inicial do seu dinheiro.`,
+        integratedHeader: (
+          day: number,
+          total: number,
+          bills: number,
+          entries: number
+        ) =>
+          `Dia ${day} de ${total}: a IA já leu ${bills} conta(s) fixa(s) e ${entries} movimentação(ões) e liberou a fase integrada da sua vida.`,
+        integratedHeroTitle: "Hoje o dinheiro conversa com a vida inteira",
+        integratedHeroSubtitle: (modules: string) =>
+          `As tarefas de hoje cruzam ${modules}. É assim que o app deixa de olhar só para saldo e começa a organizar sua vida como sistema.`,
         ongoingHeader: (day: number, total: number) =>
           `Sua jornada financeira está no dia ${day} de ${total}. Continue alimentando este módulo para a IA ajustar os próximos passos com mais precisão.`,
         billsSubtitle: (bills: number) =>
@@ -2012,6 +2135,15 @@ export default function DinheiroScreen() {
       en: {
         eyebrow: (day: number, total: number) =>
           `Financial journey • Day ${day}/${total}`,
+        waitingHeader: (label: string) =>
+          `Your current day is already complete. The AI is reading everything you filled in and will release the next step starting at ${label}.`,
+        waitingHeroTitle: "The AI is programming the next day",
+        waitingHeroSubtitle:
+          "The next tasks only appear at the next day rollover. Until then, the app turns what you filled in into practical direction.",
+        waitingCtaTitle: "Return through your journey plan",
+        waitingCtaText:
+          "While the next day is not released, you can review your progress and wait for the next rollover calmly.",
+        waitingButtonLabel: "View journey plan",
         dayOneHeader:
           "Today the app needs your financial foundation: start with fixed bills and your first real money entries of the month.",
         dayOneHeroTitle: "Your financial base starts here",
@@ -2021,6 +2153,16 @@ export default function DinheiroScreen() {
           "Your base has started. Now log real income and expenses so the AI can begin reading your financial flow.",
         dayOneEntriesSubtitle: (entries: number) =>
           `${entries} more entr${entries === 1 ? "y is" : "ies are"} needed to complete your first money reading.`,
+        integratedHeader: (
+          day: number,
+          total: number,
+          bills: number,
+          entries: number
+        ) =>
+          `Day ${day} of ${total}: the AI has already read ${bills} fixed bill(s) and ${entries} entr${entries === 1 ? "y" : "ies"}, and it has unlocked your integrated life phase.`,
+        integratedHeroTitle: "Today money talks to your whole life",
+        integratedHeroSubtitle: (modules: string) =>
+          `Today's tasks connect ${modules}. That is how the app stops looking only at balance and starts organizing your life as one system.`,
         ongoingHeader: (day: number, total: number) =>
           `Your financial journey is on day ${day} of ${total}. Keep feeding this module so the AI can refine your next steps with more precision.`,
         billsSubtitle: (bills: number) =>
@@ -2054,6 +2196,15 @@ export default function DinheiroScreen() {
       es: {
         eyebrow: (day: number, total: number) =>
           `Jornada financiera • Día ${day}/${total}`,
+        waitingHeader: (label: string) =>
+          `Tu día actual ya fue completado. La IA está leyendo todo lo que registraste y liberará el siguiente paso a partir de ${label}.`,
+        waitingHeroTitle: "La IA está programando el próximo día",
+        waitingHeroSubtitle:
+          "Las próximas tareas solo aparecen al cambiar el día. Hasta entonces, la app transforma lo que alimentaste en dirección práctica.",
+        waitingCtaTitle: "Vuelve por el plan de la jornada",
+        waitingCtaText:
+          "Mientras el próximo día no se libere, puedes revisar tu evolución y esperar la siguiente medianoche con calma.",
+        waitingButtonLabel: "Ver plan de la jornada",
         dayOneHeader:
           "Hoy la app necesita tu base financiera: empieza por las cuentas fijas y por los primeros movimientos reales del mes.",
         dayOneHeroTitle: "Tu base financiera empieza aquí",
@@ -2063,6 +2214,16 @@ export default function DinheiroScreen() {
           "Tu base ya comenzó. Ahora registra ingresos y gastos reales para que la IA empiece a leer tu flujo financiero.",
         dayOneEntriesSubtitle: (entries: number) =>
           `Faltan ${entries} movimiento(s) para completar la lectura inicial de tu dinero.`,
+        integratedHeader: (
+          day: number,
+          total: number,
+          bills: number,
+          entries: number
+        ) =>
+          `Día ${day} de ${total}: la IA ya leyó ${bills} cuenta(s) fija(s) y ${entries} movimiento(s), y liberó la fase integrada de tu vida.`,
+        integratedHeroTitle: "Hoy el dinero conversa con toda tu vida",
+        integratedHeroSubtitle: (modules: string) =>
+          `Las tareas de hoy cruzan ${modules}. Así la app deja de mirar solo el saldo y empieza a organizar tu vida como un sistema.`,
         ongoingHeader: (day: number, total: number) =>
           `Tu jornada financiera va por el día ${day} de ${total}. Sigue alimentando este módulo para que la IA ajuste mejor los próximos pasos.`,
         billsSubtitle: (bills: number) =>
@@ -2096,6 +2257,15 @@ export default function DinheiroScreen() {
       fr: {
         eyebrow: (day: number, total: number) =>
           `Parcours financier • Jour ${day}/${total}`,
+        waitingHeader: (label: string) =>
+          `Votre jour actuel est déjà terminé. L'IA lit tout ce que vous avez rempli et libérera l'étape suivante à partir de ${label}.`,
+        waitingHeroTitle: "L'IA programme le jour suivant",
+        waitingHeroSubtitle:
+          "Les prochaines tâches n'apparaissent qu'au passage au jour suivant. D'ici là, l'app transforme ce que vous avez saisi en direction concrète.",
+        waitingCtaTitle: "Revenez par le plan du parcours",
+        waitingCtaText:
+          "Tant que le jour suivant n'est pas libéré, vous pouvez revoir votre progression et attendre minuit sereinement.",
+        waitingButtonLabel: "Voir le plan du parcours",
         dayOneHeader:
           "Aujourd'hui, l'app a besoin de votre base financière : commencez par les charges fixes et par les premiers mouvements réels du mois.",
         dayOneHeroTitle: "Votre base financière commence ici",
@@ -2105,6 +2275,16 @@ export default function DinheiroScreen() {
           "Votre base a déjà commencé. Enregistrez maintenant vos vraies entrées et sorties pour que l'IA commence à lire votre flux financier.",
         dayOneEntriesSubtitle: (entries: number) =>
           `Il manque ${entries} mouvement(s) pour compléter la première lecture de votre argent.`,
+        integratedHeader: (
+          day: number,
+          total: number,
+          bills: number,
+          entries: number
+        ) =>
+          `Jour ${day} sur ${total} : l'IA a déjà lu ${bills} facture(s) fixe(s) et ${entries} mouvement(s), puis a débloqué la phase intégrée de votre vie.`,
+        integratedHeroTitle: "Aujourd'hui, l'argent parle à toute votre vie",
+        integratedHeroSubtitle: (modules: string) =>
+          `Les tâches du jour relient ${modules}. C'est ainsi que l'app ne regarde plus seulement le solde et commence à organiser votre vie comme un système.`,
         ongoingHeader: (day: number, total: number) =>
           `Votre parcours financier est au jour ${day} sur ${total}. Continuez à alimenter ce module pour que l'IA ajuste mieux les prochaines étapes.`,
         billsSubtitle: (bills: number) =>
@@ -2138,6 +2318,15 @@ export default function DinheiroScreen() {
       it: {
         eyebrow: (day: number, total: number) =>
           `Percorso finanziario • Giorno ${day}/${total}`,
+        waitingHeader: (label: string) =>
+          `Il tuo giorno attuale è già stato completato. L'IA sta leggendo tutto ciò che hai compilato e rilascerà il passo successivo a partire da ${label}.`,
+        waitingHeroTitle: "L'IA sta programmando il prossimo giorno",
+        waitingHeroSubtitle:
+          "Le prossime attività compaiono solo al cambio di giorno. Fino ad allora, l'app trasforma ciò che hai inserito in una direzione pratica.",
+        waitingCtaTitle: "Torna al piano del percorso",
+        waitingCtaText:
+          "Finché il giorno successivo non viene rilasciato, puoi rivedere i tuoi progressi e aspettare con calma la mezzanotte.",
+        waitingButtonLabel: "Vedi il piano del percorso",
         dayOneHeader:
           "Oggi l'app ha bisogno della tua base finanziaria: inizia dalle spese fisse e dai primi movimenti reali del mese.",
         dayOneHeroTitle: "La tua base finanziaria inizia qui",
@@ -2147,6 +2336,16 @@ export default function DinheiroScreen() {
           "La tua base è già iniziata. Ora registra entrate e uscite reali così l'IA può iniziare a leggere il tuo flusso finanziario.",
         dayOneEntriesSubtitle: (entries: number) =>
           `Mancano ${entries} movimento/i per completare la prima lettura del tuo denaro.`,
+        integratedHeader: (
+          day: number,
+          total: number,
+          bills: number,
+          entries: number
+        ) =>
+          `Giorno ${day} di ${total}: l'IA ha già letto ${bills} spesa/e fissa/e e ${entries} movimento/i e ha sbloccato la fase integrata della tua vita.`,
+        integratedHeroTitle: "Oggi il denaro parla con tutta la tua vita",
+        integratedHeroSubtitle: (modules: string) =>
+          `Le attività di oggi collegano ${modules}. È così che l'app smette di guardare solo il saldo e inizia a organizzare la tua vita come un sistema.`,
         ongoingHeader: (day: number, total: number) =>
           `Il tuo percorso finanziario è al giorno ${day} di ${total}. Continua ad alimentare questo modulo perché l'IA possa affinare meglio i prossimi passi.`,
         billsSubtitle: (bills: number) =>
@@ -2180,6 +2379,19 @@ export default function DinheiroScreen() {
     } as const;
 
     const localized = copyByLanguage[language];
+
+    if (waitingForNextRelease && nextUnlockLabel) {
+      return {
+        headerSubtitle: localized.waitingHeader(nextUnlockLabel),
+        heroEyebrow: localized.eyebrow(highestCompletedDay, totalDays),
+        heroTitle: localized.waitingHeroTitle,
+        heroSubtitle: localized.waitingHeroSubtitle,
+        ctaTitle: localized.waitingCtaTitle,
+        ctaText: localized.waitingCtaText,
+        ctaButtonLabel: localized.waitingButtonLabel,
+        action: "plan",
+      };
+    }
 
     if (!nextTask) {
       return {
@@ -2223,11 +2435,22 @@ export default function DinheiroScreen() {
       };
     }
 
+    const integratedHeaderSubtitle = localized.integratedHeader(
+      currentDay.day,
+      totalDays,
+      fixedBills.length,
+      entries.length
+    );
+    const integratedHeroTitle = localized.integratedHeroTitle;
+    const integratedHeroSubtitle = localized.integratedHeroSubtitle(
+      connectedModulesLabel
+    );
+
     if (nextTask.validationType === "fixed_bills_total") {
       return {
-        headerSubtitle: localized.ongoingHeader(currentDay.day, totalDays),
+        headerSubtitle: integratedHeaderSubtitle,
         heroEyebrow: localized.eyebrow(currentDay.day, totalDays),
-        heroTitle: currentDay.title,
+        heroTitle: integratedHeroTitle,
         heroSubtitle: localized.billsSubtitle(remainingFixedBillsCount),
         ctaTitle: localized.ctaBillTitle,
         ctaText: localized.ctaBillText(remainingFixedBillsCount),
@@ -2238,9 +2461,9 @@ export default function DinheiroScreen() {
 
     if (nextTask.validationType === "money_entries_total") {
       return {
-        headerSubtitle: localized.ongoingHeader(currentDay.day, totalDays),
+        headerSubtitle: integratedHeaderSubtitle,
         heroEyebrow: localized.eyebrow(currentDay.day, totalDays),
-        heroTitle: currentDay.title,
+        heroTitle: integratedHeroTitle,
         heroSubtitle: localized.entriesSubtitle(remainingEntries),
         ctaTitle: localized.ctaEntryTitle,
         ctaText: localized.ctaEntryText(remainingEntries),
@@ -2256,17 +2479,10 @@ export default function DinheiroScreen() {
 
     if (crossModuleMeta) {
       return {
-        headerSubtitle: localized.crossHeader(
-          currentDay.day,
-          totalDays,
-          crossModuleMeta.label
-        ),
+        headerSubtitle: integratedHeaderSubtitle,
         heroEyebrow: localized.eyebrow(currentDay.day, totalDays),
-        heroTitle: currentDay.title,
-        heroSubtitle: localized.crossCtaText(
-          nextTask.title,
-          crossModuleMeta.label
-        ),
+        heroTitle: integratedHeroTitle,
+        heroSubtitle: integratedHeroSubtitle,
         ctaTitle: localized.crossCtaTitle(crossModuleMeta.label),
         ctaText: localized.crossCtaText(nextTask.title, crossModuleMeta.label),
         ctaButtonLabel: localized.openModule(crossModuleMeta.label),
@@ -2275,18 +2491,31 @@ export default function DinheiroScreen() {
     }
 
     return {
-      headerSubtitle: localized.ongoingHeader(currentDay.day, totalDays),
+      headerSubtitle: integratedHeaderSubtitle,
       heroEyebrow: localized.eyebrow(currentDay.day, totalDays),
-      heroTitle: currentDay.title,
-      heroSubtitle: currentDay.summary,
+      heroTitle: integratedHeroTitle,
+      heroSubtitle: integratedHeroSubtitle,
       ctaTitle: isPremium ? ui.connectBank : ui.smartCtaNextStep,
       ctaText: currentDay.summary,
       ctaButtonLabel: isPremium ? ui.connectBank : ui.wantPremium,
       action: isPremium ? "bank" : "upgrade",
     };
-  }, [deepUi.addEntry, deepUi.addFixedBill, isPremium, journeyPlan, journeyProgress, language, ui.connectBank, ui.smartCtaNextStep, ui.wantPremium]);
+  }, [deepUi.addEntry, deepUi.addFixedBill, entries.length, fixedBills.length, isPremium, journeyPlan, journeyProgress, language, ui.connectBank, ui.smartCtaNextStep, ui.wantPremium]);
   const moneyJourneyModules = useMemo<MoneyJourneyModule[]>(() => {
     if (journeyPlan?.primaryArea !== "financeiro" || !journeyProgress) {
+      return [];
+    }
+
+    const highestCompletedDay = journeyProgress.completedDays.reduce(
+      (max, day) => Math.max(max, day),
+      0
+    );
+    const waitingForNextRelease =
+      Boolean(journeyProgress.nextDayUnlockAt) &&
+      highestCompletedDay > 0 &&
+      !journeyProgress.completedDays.includes(journeyProgress.currentDay);
+
+    if (waitingForNextRelease) {
       return [];
     }
 
@@ -2318,6 +2547,13 @@ export default function DinheiroScreen() {
         es: "Metas",
         fr: "Objectifs",
         it: "Obiettivi",
+      },
+      health: {
+        pt: "Saúde",
+        en: "Health",
+        es: "Salud",
+        fr: "Santé",
+        it: "Salute",
       },
       learning: {
         pt: "Aprendizado",
@@ -2371,6 +2607,10 @@ export default function DinheiroScreen() {
     } as const;
 
     const modulesByTask = {
+      money_entries_today: {
+        action: "entry",
+        label: moduleLabels.entry[language],
+      },
       money_entries_total: {
         action: "entry",
         label: moduleLabels.entry[language],
@@ -2379,25 +2619,57 @@ export default function DinheiroScreen() {
         action: "bill",
         label: moduleLabels.bill[language],
       },
+      goals_today: {
+        action: "goals",
+        label: moduleLabels.goals[language],
+      },
       goals_total: {
         action: "goals",
         label: moduleLabels.goals[language],
+      },
+      medications_total: {
+        action: "health",
+        label: moduleLabels.health[language],
+      },
+      medications_taken_today: {
+        action: "health",
+        label: moduleLabels.health[language],
+      },
+      learning_today: {
+        action: "learning",
+        label: moduleLabels.learning[language],
       },
       learning_items_total: {
         action: "learning",
         label: moduleLabels.learning[language],
       },
+      time_today: {
+        action: "time",
+        label: moduleLabels.time[language],
+      },
       time_items_total: {
         action: "time",
         label: moduleLabels.time[language],
+      },
+      work_today: {
+        action: "work",
+        label: moduleLabels.work[language],
       },
       work_items_total: {
         action: "work",
         label: moduleLabels.work[language],
       },
+      leisure_today: {
+        action: "leisure",
+        label: moduleLabels.leisure[language],
+      },
       leisure_items_total: {
         action: "leisure",
         label: moduleLabels.leisure[language],
+      },
+      spiritual_today: {
+        action: "spiritual",
+        label: moduleLabels.spiritual[language],
       },
       spiritual_items_total: {
         action: "spiritual",
@@ -2431,29 +2703,29 @@ export default function DinheiroScreen() {
   const moneyJourneyBridgeCopy = useMemo(() => {
     const copyByLanguage = {
       pt: {
-        title: "Módulos que destravam seu dinheiro agora",
+        title: "Hoje seu dinheiro depende destas áreas",
         text:
-          "Nesta fase, o Dinheiro conversa com estas áreas para organizar sua vida como um sistema completo.",
+          "A IA leu a base que você registrou no Dinheiro e montou o dia conectando estas áreas. Complete uma a uma para organizar a vida como sistema.",
       },
       en: {
-        title: "Modules that unlock your finances now",
+        title: "Today your money depends on these areas",
         text:
-          "At this stage, Money works together with these areas to organize your life as one complete system.",
+          "The AI read the foundation you entered in Money and built today's plan by connecting these areas. Complete them one by one to organize your life as a system.",
       },
       es: {
-        title: "Módulos que desbloquean tus finanzas ahora",
+        title: "Hoy tu dinero depende de estas áreas",
         text:
-          "En esta fase, Dinero conversa con estas áreas para organizar tu vida como un sistema completo.",
+          "La IA leyó la base que registraste en Dinero y armó el día conectando estas áreas. Complétalas una por una para organizar tu vida como sistema.",
       },
       fr: {
-        title: "Modules qui débloquent vos finances maintenant",
+        title: "Aujourd'hui, votre argent dépend de ces domaines",
         text:
-          "À cette étape, l'Argent travaille avec ces domaines pour organiser votre vie comme un système complet.",
+          "L'IA a lu la base que vous avez enregistrée dans Argent et a construit la journée en reliant ces domaines. Complétez-les un par un pour organiser votre vie comme un système.",
       },
       it: {
-        title: "Moduli che sbloccano ora le tue finanze",
+        title: "Oggi il tuo denaro dipende da queste aree",
         text:
-          "In questa fase, il Denaro lavora con queste aree per organizzare la tua vita come un sistema completo.",
+          "L'IA ha letto la base che hai registrato nel Denaro e ha costruito la giornata collegando queste aree. Completale una per una per organizzare la tua vita come un sistema.",
       },
     } as const;
 
@@ -2684,6 +2956,14 @@ export default function DinheiroScreen() {
     ui,
   ]);
 
+  const resetEntryForm = useCallback(() => {
+    setEditingEntry(null);
+    setTitle("");
+    setAmount("");
+    setType("entrada");
+    setCategory("Outros");
+  }, []);
+
   const duplicateManualEntry = useMemo(() => {
     const cleanTitle = normalizeText(title);
     const parsedAmount = Number(amount.replace(",", "."));
@@ -2692,6 +2972,7 @@ export default function DinheiroScreen() {
 
     return entries.find((entry) => {
       if (entry.source === "open_finance") return false;
+      if (entry.id === editingEntry?.id) return false;
 
       const sameTitle = normalizeText(entry.title) === cleanTitle;
       const sameType = entry.type === type;
@@ -2702,7 +2983,7 @@ export default function DinheiroScreen() {
 
       return sameTitle && sameType && sameCategory && sameAmount && recentEnough;
     });
-  }, [title, amount, entries, type, category]);
+  }, [title, amount, entries, type, category, editingEntry?.id]);
 
   const expensePressureLevel = useMemo(() => {
     if (totalEntradas <= 0 || totalSaidas <= 0) return "ok";
@@ -2738,13 +3019,24 @@ export default function DinheiroScreen() {
     ui,
   ]);
 
-  const openEntryModal = useCallback(() => {
-    if (!canCreateManualEntry) {
+  const openEntryModal = useCallback((entry?: MoneyEntry) => {
+    if (!entry && !canCreateManualEntry) {
       showPremiumAlert(ui.limitManualEntries);
       return;
     }
+
+    if (entry) {
+      setEditingEntry(entry);
+      setTitle(entry.title);
+      setAmount(String(entry.amount).replace(".", ","));
+      setType(entry.type);
+      setCategory(entry.category);
+    } else {
+      resetEntryForm();
+    }
+
     setModalOpen(true);
-  }, [canCreateManualEntry, showPremiumAlert, ui.limitManualEntries]);
+  }, [canCreateManualEntry, resetEntryForm, showPremiumAlert, ui.limitManualEntries]);
 
   const openFixedBillModal = useCallback(() => {
     if (!canCreateFixedBill) {
@@ -2772,6 +3064,9 @@ export default function DinheiroScreen() {
     }
 
     switch (moneyJourneyGuide.action) {
+      case "plan":
+        router.push("/plano-ia");
+        return;
       case "bill":
         openFixedBillModal();
         return;
@@ -2780,6 +3075,9 @@ export default function DinheiroScreen() {
         return;
       case "goals":
         router.push("/metas");
+        return;
+      case "health":
+        router.push("/saude");
         return;
       case "learning":
         router.push("/aprendizado");
@@ -2812,7 +3110,7 @@ export default function DinheiroScreen() {
   }, [goToUpgrade, isPremium, moneyJourneyGuide, openEntryModal, openFixedBillModal]);
 
   const adicionarMovimentacao = useCallback(async () => {
-    if (!isPremium && manualEntriesCount >= FREE_MAX_MANUAL_ENTRIES) {
+    if (!editingEntry && !isPremium && manualEntriesCount >= FREE_MAX_MANUAL_ENTRIES) {
       showPremiumAlert(ui.limitManualEntries);
       return;
     }
@@ -2841,23 +3139,29 @@ export default function DinheiroScreen() {
     }
 
     const proceedToSave = async () => {
-      const newEntry: MoneyEntry = {
-        id: uid(),
+      const nextEntry: MoneyEntry = {
+        id: editingEntry?.id ?? uid(),
         title: cleanTitle,
         amount: parsedAmount,
         type,
         category,
-        createdAt: new Date().toISOString(),
+        createdAt: editingEntry?.createdAt ?? new Date().toISOString(),
+        source: editingEntry?.source,
+        institutionId: editingEntry?.institutionId,
+        institutionName: editingEntry?.institutionName,
+        externalId: editingEntry?.externalId,
+        tags: editingEntry?.tags,
+        isRecurring: editingEntry?.isRecurring,
+        notes: editingEntry?.notes,
       };
 
-      const next = [newEntry, ...entries];
+      const next = editingEntry
+        ? entries.map((entry) => (entry.id === editingEntry.id ? nextEntry : entry))
+        : [nextEntry, ...entries];
       await saveEntries(next);
 
-      setTitle("");
-      setAmount("");
-      setType("entrada");
-      setCategory("Outros");
-      setSelectedCategory(category);
+      resetEntryForm();
+      setSelectedCategory(nextEntry.category);
       setModalOpen(false);
     };
 
@@ -2880,6 +3184,7 @@ export default function DinheiroScreen() {
 
     await proceedToSave();
   }, [
+    editingEntry,
     isPremium,
     manualEntriesCount,
     title,
@@ -2892,8 +3197,20 @@ export default function DinheiroScreen() {
     duplicateManualEntry,
     totalEntradas,
     saldoAtual,
+    resetEntryForm,
     ui,
   ]);
+
+  const editarMovimentacao = useCallback(
+    (entry: MoneyEntry) => {
+      if (entry.source === "open_finance") {
+        return;
+      }
+
+      openEntryModal(entry);
+    },
+    [openEntryModal]
+  );
 
   const removerMovimentacao = useCallback(
     async (entry: MoneyEntry) => {
@@ -4429,18 +4746,38 @@ export default function DinheiroScreen() {
                   ) : null}
                 </View>
 
-                <Text
-                  style={[
-                    styles.recentAmount,
-                    {
-                      color:
-                        entry.type === "entrada" ? colors.success : colors.danger,
-                    },
-                  ]}
-                >
-                  {entry.type === "entrada" ? "+" : "-"}{" "}
-                  {showBalance ? formatCurrency(entry.amount) : "R$ •••••"}
-                </Text>
+                <View style={styles.recentRight}>
+                  <Text
+                    style={[
+                      styles.recentAmount,
+                      {
+                        color:
+                          entry.type === "entrada" ? colors.success : colors.danger,
+                      },
+                    ]}
+                  >
+                    {entry.type === "entrada" ? "+" : "-"}{" "}
+                    {showBalance ? formatCurrency(entry.amount) : "R$ •••••"}
+                  </Text>
+
+                  <View style={styles.recentActionsRow}>
+                    {entry.source !== "open_finance" ? (
+                      <Pressable onPress={() => editarMovimentacao(entry)}>
+                        <Text style={[styles.editText, { color: colors.accent }]}>
+                          {deepUi.edit}
+                        </Text>
+                      </Pressable>
+                    ) : null}
+
+                    <Pressable onPress={() => removerMovimentacao(entry)}>
+                      <Text
+                        style={[styles.removeText, { color: colors.textSecondary }]}
+                      >
+                        {ui.remove}
+                      </Text>
+                    </Pressable>
+                  </View>
+                </View>
               </View>
             ))}
           </View>
@@ -4807,16 +5144,26 @@ export default function DinheiroScreen() {
                         {showBalance ? formatCurrency(entry.amount) : "R$ •••••"}
                       </Text>
 
-                      <Pressable onPress={() => removerMovimentacao(entry)}>
-                        <Text
-                          style={[
-                            styles.removeText,
-                            { color: colors.textSecondary },
-                          ]}
-                        >
-                          {ui.remove}
-                        </Text>
-                      </Pressable>
+                      <View style={styles.entryActionsRow}>
+                        {entry.source !== "open_finance" ? (
+                          <Pressable onPress={() => editarMovimentacao(entry)}>
+                            <Text style={[styles.editText, { color: colors.accent }]}>
+                              {deepUi.edit}
+                            </Text>
+                          </Pressable>
+                        ) : null}
+
+                        <Pressable onPress={() => removerMovimentacao(entry)}>
+                          <Text
+                            style={[
+                              styles.removeText,
+                              { color: colors.textSecondary },
+                            ]}
+                          >
+                            {ui.remove}
+                          </Text>
+                        </Pressable>
+                      </View>
                     </View>
                   </View>
                 ))}
@@ -4827,30 +5174,41 @@ export default function DinheiroScreen() {
       </ScrollView>
 
       <Modal visible={modalOpen} transparent animationType="slide">
-        <View
-          style={[
-            styles.modalBackdrop,
-            {
-              backgroundColor: colors.overlay,
-              paddingBottom: Math.max(insets.bottom, 12),
-            },
-          ]}
+        <KeyboardAvoidingView
+          style={styles.modalKeyboardWrap}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
         >
           <View
             style={[
-              styles.modalCard,
+              styles.modalBackdrop,
               {
-                backgroundColor: colors.surface,
-                borderColor: colors.border,
-                paddingBottom: 18 + Math.max(insets.bottom, 12),
+                backgroundColor: colors.overlay,
+                paddingBottom: Math.max(insets.bottom, 12),
               },
             ]}
           >
+            <ScrollView
+              style={[
+                styles.modalCard,
+                {
+                  backgroundColor: colors.surface,
+                  borderColor: colors.border,
+                },
+              ]}
+              contentContainerStyle={[
+                styles.modalCardContent,
+                {
+                  paddingBottom: 18 + Math.max(insets.bottom, 12),
+                },
+              ]}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+            >
             <Text style={[styles.modalTitle, { color: colors.text }]}>
-              {deepUi.newEntryTitle}
+              {editingEntry ? deepUi.editEntryTitle : deepUi.newEntryTitle}
             </Text>
 
-            {planReady && !isPremium ? (
+            {planReady && !isPremium && !editingEntry ? (
               <View
                 style={[
                   styles.modalInfoCard,
@@ -5048,50 +5406,65 @@ export default function DinheiroScreen() {
                   { color: colors.accentButtonText },
                 ]}
               >
-                {deepUi.saveEntry}
+                {editingEntry ? deepUi.saveChanges : deepUi.saveEntry}
               </Text>
             </Pressable>
 
-            <Pressable
-              style={[
-                styles.modalCancelButton,
-                { backgroundColor: colors.surfaceAlt },
-              ]}
-              onPress={() => setModalOpen(false)}
-            >
-              <Text
+              <Pressable
                 style={[
-                  styles.modalCancelButtonText,
-                  { color: colors.textMuted },
+                  styles.modalCancelButton,
+                  { backgroundColor: colors.surfaceAlt },
                 ]}
+                onPress={() => {
+                  setModalOpen(false);
+                  resetEntryForm();
+                }}
               >
-                {ui.cancel}
-              </Text>
-            </Pressable>
+                <Text
+                  style={[
+                    styles.modalCancelButtonText,
+                    { color: colors.textMuted },
+                  ]}
+                >
+                  {ui.cancel}
+                </Text>
+              </Pressable>
+            </ScrollView>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       <Modal visible={fixedBillModalOpen} transparent animationType="slide">
-        <View
-          style={[
-            styles.modalBackdrop,
-            {
-              backgroundColor: colors.overlay,
-              paddingBottom: Math.max(insets.bottom, 12),
-            },
-          ]}
+        <KeyboardAvoidingView
+          style={styles.modalKeyboardWrap}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
         >
           <View
             style={[
-              styles.modalCard,
+              styles.modalBackdrop,
               {
-                backgroundColor: colors.surface,
-                borderColor: colors.border,
-                paddingBottom: 18 + Math.max(insets.bottom, 12),
+                backgroundColor: colors.overlay,
+                paddingBottom: Math.max(insets.bottom, 12),
               },
             ]}
           >
+            <ScrollView
+              style={[
+                styles.modalCard,
+                {
+                  backgroundColor: colors.surface,
+                  borderColor: colors.border,
+                },
+              ]}
+              contentContainerStyle={[
+                styles.modalCardContent,
+                {
+                  paddingBottom: 18 + Math.max(insets.bottom, 12),
+                },
+              ]}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+            >
             <Text style={[styles.modalTitle, { color: colors.text }]}>
               {editingBill
                 ? deepUi.editFixedBillTitle
@@ -5253,31 +5626,32 @@ export default function DinheiroScreen() {
               </Text>
             </Pressable>
 
-            <Pressable
-              style={[
-                styles.modalCancelButton,
-                { backgroundColor: colors.surfaceAlt },
-              ]}
-              onPress={() => {
-                setFixedBillModalOpen(false);
-                setEditingBill(null);
-                setBillTitle("");
-                setBillAmount("");
-                setBillDueDay("");
-                setBillCategory("Moradia");
-              }}
-            >
-              <Text
+              <Pressable
                 style={[
-                  styles.modalCancelButtonText,
-                  { color: colors.textMuted },
+                  styles.modalCancelButton,
+                  { backgroundColor: colors.surfaceAlt },
                 ]}
+                onPress={() => {
+                  setFixedBillModalOpen(false);
+                  setEditingBill(null);
+                  setBillTitle("");
+                  setBillAmount("");
+                  setBillDueDay("");
+                  setBillCategory("Moradia");
+                }}
               >
-                {ui.cancel}
-              </Text>
-            </Pressable>
+                <Text
+                  style={[
+                    styles.modalCancelButtonText,
+                    { color: colors.textMuted },
+                  ]}
+                >
+                  {ui.cancel}
+                </Text>
+              </Pressable>
+            </ScrollView>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {showModuleTour && activeMoneyTourStep ? (
@@ -6049,6 +6423,19 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: "700",
   },
+  recentRight: {
+    alignItems: "flex-end",
+    gap: 8,
+    marginLeft: 8,
+    maxWidth: 112,
+  },
+  recentActionsRow: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    alignItems: "center",
+    gap: 12,
+    flexWrap: "wrap",
+  },
   recentAmount: {
     fontSize: 13,
     fontWeight: "900",
@@ -6170,6 +6557,13 @@ const styles = StyleSheet.create({
     marginLeft: 12,
     maxWidth: 120,
   },
+  entryActionsRow: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    alignItems: "center",
+    gap: 12,
+    flexWrap: "wrap",
+  },
   entryAmount: {
     fontSize: 14,
     fontWeight: "900",
@@ -6183,12 +6577,18 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "flex-end",
   },
+  modalKeyboardWrap: {
+    flex: 1,
+  },
   modalCard: {
     borderTopLeftRadius: 22,
     borderTopRightRadius: 22,
-    padding: 16,
     borderWidth: 1,
     maxHeight: "92%",
+    overflow: "hidden",
+  },
+  modalCardContent: {
+    padding: 16,
   },
   modalTitle: {
     fontSize: 18,

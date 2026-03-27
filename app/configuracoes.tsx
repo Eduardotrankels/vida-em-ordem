@@ -33,6 +33,7 @@ import {
   getRegionLabel,
   getRegionPreferenceOptions,
 } from "./utils/locale";
+import { getBillingStatus, openManagePlan } from "./services/billing";
 import { getScreenContentBottomPadding } from "./utils/safeArea";
 import { useAppTheme } from "./utils/themeContext";
 
@@ -40,11 +41,40 @@ const SUBSCRIPTION_PLAN_KEY = "@vida_em_ordem_subscription_plan_v1";
 
 const LOCK_OPTIONS: InactivityLockMinutes[] = [0, 1, 3, 5, 10];
 
+const supportCopyByLanguage = {
+  pt: {
+    section: "Ajuda",
+    title: "Ajuda e suporte",
+    text: "Abra o SAC do app para registrar problemas, dúvidas e sugestões com histórico dos chamados.",
+  },
+  en: {
+    section: "Help",
+    title: "Help and support",
+    text: "Open the in-app support center to report issues, questions, and suggestions with ticket history.",
+  },
+  es: {
+    section: "Ayuda",
+    title: "Ayuda y soporte",
+    text: "Abre el centro de soporte de la app para registrar problemas, dudas y sugerencias con historial.",
+  },
+  fr: {
+    section: "Aide",
+    title: "Aide et support",
+    text: "Ouvrez le centre de support de l'app pour enregistrer problèmes, questions et suggestions avec historique.",
+  },
+  it: {
+    section: "Aiuto",
+    title: "Aiuto e supporto",
+    text: "Apri il centro assistenza dell'app per registrare problemi, dubbi e suggerimenti con storico.",
+  },
+} as const;
+
 export default function ConfiguracoesScreen() {
   const insets = useSafeAreaInsets();
   const { settings, colors, patchAppSettings } = useAppTheme();
   const { language, setLanguage, t } = useAppLanguage();
   const [planHydrated, setPlanHydrated] = useState(false);
+  const supportCopy = supportCopyByLanguage[language];
 
   const lockOptions = useMemo(
     () =>
@@ -107,14 +137,58 @@ export default function ConfiguracoesScreen() {
     router.push("/assinatura");
   }, []);
 
+  const handleManagePlan = useCallback(() => {
+    void (async () => {
+      try {
+        await openManagePlan({
+          inboxTitle:
+            language === "pt"
+              ? "Gerenciamento do plano aberto"
+              : language === "en"
+              ? "Plan management opened"
+              : language === "es"
+              ? "Gestion del plan abierta"
+              : language === "fr"
+              ? "Gestion du plan ouverte"
+              : "Gestione del piano aperta",
+          inboxMessage:
+            language === "pt"
+              ? "Sua area externa de gerenciamento do plano foi aberta pelo app."
+              : language === "en"
+              ? "Your external plan management area was opened by the app."
+              : language === "es"
+              ? "La zona externa de gestion del plan fue abierta por la app."
+              : language === "fr"
+              ? "L'espace externe de gestion de votre plan a ete ouvert par l'app."
+              : "L'area esterna di gestione del piano e stata aperta dall'app.",
+          actionRoute: "/configuracoes",
+        });
+      } catch (error: any) {
+        Alert.alert(t("common.error"), error?.message || t("config.planPremiumText"));
+      }
+    })();
+  }, [language, t]);
+
   const goToTour = useCallback(() => {
     router.push("/tour-app");
   }, []);
 
+  const goToSupport = useCallback(() => {
+    router.push("/ajuda-suporte");
+  }, []);
+
   const syncPlanFromStorage = useCallback(async () => {
     try {
-      const planRaw = await AsyncStorage.getItem(SUBSCRIPTION_PLAN_KEY);
-      const effectivePlan = planRaw === "premium" ? "premium" : "free";
+      const [planRaw, billingStatus] = await Promise.all([
+        AsyncStorage.getItem(SUBSCRIPTION_PLAN_KEY),
+        getBillingStatus().catch(() => null),
+      ]);
+      const effectivePlan =
+        billingStatus?.subscription?.plan === "premium" ||
+        billingStatus?.plan === "premium" ||
+        planRaw === "premium"
+          ? "premium"
+          : "free";
 
       if (settings.plan !== effectivePlan) {
         await patchAppSettings({ plan: effectivePlan });
@@ -234,7 +308,7 @@ export default function ConfiguracoesScreen() {
                 },
                 colors.isWhiteAccentButton && styles.whiteAccentButton,
               ]}
-              onPress={goToPremium}
+              onPress={isPremium ? handleManagePlan : goToPremium}
             >
               <Text
                 style={[
@@ -822,7 +896,7 @@ export default function ConfiguracoesScreen() {
                   colors.isWhiteAccentButton &&
                   styles.whiteAccentButton,
               ]}
-              onPress={goToPremium}
+              onPress={isPremium ? handleManagePlan : goToPremium}
             >
               <View style={styles.premiumButtonContent}>
                 <View style={styles.premiumButtonTextWrap}>
@@ -916,6 +990,70 @@ export default function ConfiguracoesScreen() {
               value: isPremium ? t("common.premium") : t("common.free"),
             })}
           </Text>
+        </View>
+
+        <Text style={[styles.sectionLabel, { color: colors.textMuted }]}>
+          {supportCopy.section}
+        </Text>
+
+        <View
+          style={[
+            styles.card,
+            {
+              backgroundColor: colors.surface,
+              borderColor: colors.border,
+              shadowColor: colors.shadow,
+            },
+          ]}
+        >
+          <View style={styles.actionList}>
+            <Pressable
+              style={[
+                styles.actionCard,
+                {
+                  backgroundColor: colors.surfaceAlt,
+                  borderColor: colors.border,
+                },
+              ]}
+              onPress={goToSupport}
+            >
+              <View
+                style={[
+                  styles.actionIconWrap,
+                  {
+                    backgroundColor: colors.accentSoft,
+                    borderColor: colors.accentBorder,
+                  },
+                ]}
+              >
+                <Ionicons
+                  name="help-buoy-outline"
+                  size={18}
+                  color={colors.accent}
+                />
+              </View>
+
+              <View style={styles.actionTextWrap}>
+                <Text style={[styles.actionTitle, { color: colors.text }]}>
+                  {supportCopy.title}
+                </Text>
+                <Text
+                  style={[
+                    styles.actionText,
+                    { color: colors.textSecondary },
+                  ]}
+                >
+                  {supportCopy.text}
+                </Text>
+              </View>
+
+              <Ionicons
+                name="chevron-forward"
+                size={18}
+                color={colors.textMuted}
+              />
+            </Pressable>
+          </View>
         </View>
       </ScrollView>
     </SafeAreaView>

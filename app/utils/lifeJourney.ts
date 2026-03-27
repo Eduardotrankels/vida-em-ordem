@@ -4,6 +4,8 @@ import { AppLanguage, DEFAULT_APP_LANGUAGE } from "./i18n";
 export const AI_ONBOARDING_KEY = "@vida_em_ordem_ai_onboarding_v1";
 export const AI_PLAN_KEY = "@vida_em_ordem_ai_plan_v1";
 export const AI_JOURNEY_PROGRESS_KEY = "@vida_em_ordem_ai_journey_progress_v1";
+export const AI_EXPERIENCE_FEEDBACK_KEY =
+  "@vida_em_ordem_ai_experience_feedback_v1";
 
 const HABITS_KEY = "@vida_em_ordem_habitos_v1";
 const MONEY_ENTRIES_KEY = "@vida_em_ordem_money_entries_v1";
@@ -71,13 +73,20 @@ export type LifeJourneyPlan = {
 
 export type JourneyTaskValidationType =
   | "money_entries_total"
+  | "money_entries_today"
   | "fixed_bills_total"
   | "goals_total"
+  | "goals_today"
   | "learning_items_total"
+  | "learning_today"
   | "time_items_total"
+  | "time_today"
   | "work_items_total"
+  | "work_today"
   | "leisure_items_total"
+  | "leisure_today"
   | "spiritual_items_total"
+  | "spiritual_today"
   | "habits_total"
   | "habits_completed_today"
   | "medications_total"
@@ -101,6 +110,15 @@ export type AIJourneyDay = {
   tasks: AIJourneyTask[];
 };
 
+export type AIExperienceEntry = {
+  id: string;
+  createdAt: string;
+  rating: number;
+  note: string;
+  day: number;
+  primaryArea: LifeArea;
+};
+
 export type AIJourneyProgress = {
   currentDay: number;
   unlockedDays: number[];
@@ -108,6 +126,15 @@ export type AIJourneyProgress = {
   totalXp: number;
   startedAt: string;
   lastCompletedAt?: string;
+  nextDayUnlockAt?: string;
+  analysisStatus?: "idle" | "processing" | "ready";
+  analysisStartedAt?: string;
+  analysisCompletedAt?: string;
+  pendingFeedbackTitle?: string;
+  pendingFeedbackText?: string;
+  latestFeedbackTitle?: string;
+  latestFeedbackText?: string;
+  lastAnalyzedDay?: number;
   finishedAt?: string;
 };
 
@@ -594,9 +621,9 @@ const AREA_JOURNEY_TEMPLATES: Record<
 > = {
   financeiro: [
     {
-      title: "Clareza do dinheiro",
-      summary: "Ganhe visão do que já está entrando e saindo.",
-      rewardXp: 45,
+      title: "Base real do dinheiro",
+      summary: "Alimente o app com os dados que a IA precisa para começar a organizar sua vida financeira.",
+      rewardXp: 60,
       tasks: [
         {
           title: "Cadastrar 1 conta fixa",
@@ -611,64 +638,53 @@ const AREA_JOURNEY_TEMPLATES: Record<
       ],
     },
     {
-      title: "Dinheiro com direção",
-      summary: "Transforme clareza em meta e intenção real.",
-      rewardXp: 45,
+      title: "Leitura integrada da sua vida",
+      summary: "Depois da base financeira, a IA libera um dia que conecta dinheiro, saúde, rotina, trabalho e crescimento.",
+      rewardXp: 90,
       tasks: [
         {
-          title: "Ter ao menos 4 movimentações registradas",
+          title: "Ter ao menos 3 movimentações registradas",
           validationType: "money_entries_total",
-          targetValue: 4,
+          targetValue: 3,
         },
         {
-          title: "Definir 1 meta financeira",
-          validationType: "goals_total",
+          title: "Registrar 1 meta hoje",
+          validationType: "goals_today",
           targetValue: 1,
         },
-      ],
-    },
-    {
-      title: "Disciplina e repertório",
-      summary: "O dinheiro melhora quando rotina e aprendizado entram no jogo.",
-      rewardXp: 50,
-      tasks: [
         {
-          title: "Criar 1 hábito de organização",
+          title: "Cadastrar 1 cuidado de saúde",
+          validationType: "medications_total",
+          targetValue: 1,
+        },
+        {
+          title: "Organizar o dia no módulo Tempo",
+          validationType: "time_today",
+          targetValue: 1,
+        },
+        {
+          title: "Organizar o foco no módulo Trabalho",
+          validationType: "work_today",
+          targetValue: 1,
+        },
+        {
+          title: "Registrar 1 passo de aprendizado hoje",
+          validationType: "learning_today",
+          targetValue: 1,
+        },
+        {
+          title: "Criar 1 hábito de base",
           validationType: "habits_total",
           targetValue: 1,
         },
         {
-          title: "Registrar 1 passo de aprendizado",
-          validationType: "learning_items_total",
-          targetValue: 1,
-        },
-      ],
-    },
-    {
-      title: "Tempo e trabalho alinhados",
-      summary: "Organização financeira cresce quando sua rotina e seu trabalho entram no eixo.",
-      rewardXp: 55,
-      tasks: [
-        {
-          title: "Organizar 1 passo no módulo Tempo",
-          validationType: "time_items_total",
+          title: "Registrar 1 momento de lazer hoje",
+          validationType: "leisure_today",
           targetValue: 1,
         },
         {
-          title: "Definir 1 avanço profissional",
-          validationType: "work_items_total",
-          targetValue: 1,
-        },
-      ],
-    },
-    {
-      title: "Respiro e autoconsciência",
-      summary: "Seu dinheiro também depende de energia, pausa e leitura honesta do momento.",
-      rewardXp: 60,
-      tasks: [
-        {
-          title: "Registrar 1 momento de lazer",
-          validationType: "leisure_items_total",
+          title: "Registrar 1 prática de espiritualidade hoje",
+          validationType: "spiritual_today",
           targetValue: 1,
         },
         {
@@ -679,35 +695,244 @@ const AREA_JOURNEY_TEMPLATES: Record<
       ],
     },
     {
-      title: "Base interior e estrutura",
-      summary: "Centro emocional e organização recorrente ajudam o dinheiro a parar de escapar.",
-      rewardXp: 65,
+      title: "Ritmo com presença",
+      summary: "Agora a organização do dinheiro acontece junto com constância, saúde, trabalho, aprendizado e tempo bem usado.",
+      rewardXp: 95,
       tasks: [
         {
-          title: "Registrar 1 prática de espiritualidade",
-          validationType: "spiritual_items_total",
+          title: "Ter ao menos 4 movimentações registradas",
+          validationType: "money_entries_total",
+          targetValue: 4,
+        },
+        {
+          title: "Registrar 1 meta hoje",
+          validationType: "goals_today",
           targetValue: 1,
+        },
+        {
+          title: "Concluir 1 cuidado de saúde hoje",
+          validationType: "medications_taken_today",
+          targetValue: 1,
+        },
+        {
+          title: "Passar pelo módulo Tempo hoje",
+          validationType: "time_today",
+          targetValue: 1,
+        },
+        {
+          title: "Passar pelo módulo Trabalho hoje",
+          validationType: "work_today",
+          targetValue: 1,
+        },
+        {
+          title: "Passar pelo módulo Aprendizado hoje",
+          validationType: "learning_today",
+          targetValue: 1,
+        },
+        {
+          title: "Concluir 1 hábito hoje",
+          validationType: "habits_completed_today",
+          targetValue: 1,
+        },
+        {
+          title: "Registrar 1 momento de lazer hoje",
+          validationType: "leisure_today",
+          targetValue: 1,
+        },
+        {
+          title: "Registrar 1 prática de espiritualidade hoje",
+          validationType: "spiritual_today",
+          targetValue: 1,
+        },
+        {
+          title: "Fazer o check-in do dia",
+          validationType: "checkin_today",
+          targetValue: 1,
+        },
+      ],
+    },
+    {
+      title: "Organização que se sustenta",
+      summary: "Seu dinheiro começa a estabilizar quando cada área do app devolve mais clareza para o dia.",
+      rewardXp: 100,
+      tasks: [
+        {
+          title: "Ter ao menos 5 movimentações registradas",
+          validationType: "money_entries_total",
+          targetValue: 5,
         },
         {
           title: "Manter 2 contas fixas cadastradas",
           validationType: "fixed_bills_total",
           targetValue: 2,
         },
-      ],
-    },
-    {
-      title: "Vida financeira em integração",
-      summary: "Feche a primeira semana com o dinheiro conectado ao restante da sua vida.",
-      rewardXp: 80,
-      tasks: [
         {
-          title: "Registrar 6 movimentações no total",
-          validationType: "money_entries_total",
-          targetValue: 6,
+          title: "Registrar 1 meta hoje",
+          validationType: "goals_today",
+          targetValue: 1,
+        },
+        {
+          title: "Concluir 1 cuidado de saúde hoje",
+          validationType: "medications_taken_today",
+          targetValue: 1,
+        },
+        {
+          title: "Passar pelo módulo Tempo hoje",
+          validationType: "time_today",
+          targetValue: 1,
+        },
+        {
+          title: "Passar pelo módulo Trabalho hoje",
+          validationType: "work_today",
+          targetValue: 1,
+        },
+        {
+          title: "Passar pelo módulo Aprendizado hoje",
+          validationType: "learning_today",
+          targetValue: 1,
         },
         {
           title: "Concluir 1 hábito hoje",
           validationType: "habits_completed_today",
+          targetValue: 1,
+        },
+        {
+          title: "Registrar 1 momento de lazer hoje",
+          validationType: "leisure_today",
+          targetValue: 1,
+        },
+        {
+          title: "Registrar 1 prática de espiritualidade hoje",
+          validationType: "spiritual_today",
+          targetValue: 1,
+        },
+        {
+          title: "Fazer o check-in do dia",
+          validationType: "checkin_today",
+          targetValue: 1,
+        },
+      ],
+    },
+    {
+      title: "Decisões melhores",
+      summary: "Com mais dados e rotina, a IA consegue te orientar com mais maturidade e menos achismo.",
+      rewardXp: 110,
+      tasks: [
+        {
+          title: "Ter ao menos 6 movimentações registradas",
+          validationType: "money_entries_total",
+          targetValue: 6,
+        },
+        {
+          title: "Manter 2 contas fixas cadastradas",
+          validationType: "fixed_bills_total",
+          targetValue: 2,
+        },
+        {
+          title: "Registrar 1 meta hoje",
+          validationType: "goals_today",
+          targetValue: 1,
+        },
+        {
+          title: "Concluir 1 cuidado de saúde hoje",
+          validationType: "medications_taken_today",
+          targetValue: 1,
+        },
+        {
+          title: "Passar pelo módulo Tempo hoje",
+          validationType: "time_today",
+          targetValue: 1,
+        },
+        {
+          title: "Passar pelo módulo Trabalho hoje",
+          validationType: "work_today",
+          targetValue: 1,
+        },
+        {
+          title: "Passar pelo módulo Aprendizado hoje",
+          validationType: "learning_today",
+          targetValue: 1,
+        },
+        {
+          title: "Concluir 1 hábito hoje",
+          validationType: "habits_completed_today",
+          targetValue: 1,
+        },
+        {
+          title: "Registrar 1 momento de lazer hoje",
+          validationType: "leisure_today",
+          targetValue: 1,
+        },
+        {
+          title: "Registrar 1 prática de espiritualidade hoje",
+          validationType: "spiritual_today",
+          targetValue: 1,
+        },
+        {
+          title: "Fazer o check-in do dia",
+          validationType: "checkin_today",
+          targetValue: 1,
+        },
+      ],
+    },
+    {
+      title: "Vida em ordem pelo sistema",
+      summary: "Feche a primeira semana usando dinheiro, metas, saúde, rotina e crescimento como um mesmo sistema.",
+      rewardXp: 130,
+      tasks: [
+        {
+          title: "Ter ao menos 7 movimentações registradas",
+          validationType: "money_entries_total",
+          targetValue: 7,
+        },
+        {
+          title: "Manter 2 contas fixas cadastradas",
+          validationType: "fixed_bills_total",
+          targetValue: 2,
+        },
+        {
+          title: "Registrar 1 meta hoje",
+          validationType: "goals_today",
+          targetValue: 1,
+        },
+        {
+          title: "Concluir 1 cuidado de saúde hoje",
+          validationType: "medications_taken_today",
+          targetValue: 1,
+        },
+        {
+          title: "Passar pelo módulo Tempo hoje",
+          validationType: "time_today",
+          targetValue: 1,
+        },
+        {
+          title: "Passar pelo módulo Trabalho hoje",
+          validationType: "work_today",
+          targetValue: 1,
+        },
+        {
+          title: "Passar pelo módulo Aprendizado hoje",
+          validationType: "learning_today",
+          targetValue: 1,
+        },
+        {
+          title: "Concluir 1 hábito hoje",
+          validationType: "habits_completed_today",
+          targetValue: 1,
+        },
+        {
+          title: "Registrar 1 momento de lazer hoje",
+          validationType: "leisure_today",
+          targetValue: 1,
+        },
+        {
+          title: "Registrar 1 prática de espiritualidade hoje",
+          validationType: "spiritual_today",
+          targetValue: 1,
+        },
+        {
+          title: "Fazer o check-in do dia",
+          validationType: "checkin_today",
           targetValue: 1,
         },
       ],
@@ -1664,6 +1889,13 @@ function getTaskTitle(
       fr: "Enregistrer {{count}} mouvements au total",
       it: "Registrare {{count}} movimenti in totale",
     },
+    money_entries_today: {
+      pt: "Registrar {{count}} movimentação(ões) hoje",
+      en: "Register {{count}} money entry/entries today",
+      es: "Registrar {{count}} movimiento(s) hoy",
+      fr: "Enregistrer {{count}} mouvement(s) aujourd'hui",
+      it: "Registrare {{count}} movimento/i oggi",
+    },
     fixed_bills_total: {
       pt: "Cadastrar {{count}} conta(s) fixa(s)",
       en: "Add {{count}} fixed bill(s)",
@@ -1678,12 +1910,26 @@ function getTaskTitle(
       fr: "Définir {{count}} objectif(s)",
       it: "Definire {{count}} obiettivo/i",
     },
+    goals_today: {
+      pt: "Registrar {{count}} meta(s) hoje",
+      en: "Register {{count}} goal(s) today",
+      es: "Registrar {{count}} meta(s) hoy",
+      fr: "Enregistrer {{count}} objectif(s) aujourd'hui",
+      it: "Registrare {{count}} obiettivo/i oggi",
+    },
     learning_items_total: {
       pt: "Registrar {{count}} passo(s) de aprendizado",
       en: "Register {{count}} learning step(s)",
       es: "Registrar {{count}} paso(s) de aprendizaje",
       fr: "Enregistrer {{count}} étape(s) d'apprentissage",
       it: "Registrare {{count}} passo/i di apprendimento",
+    },
+    learning_today: {
+      pt: "Passar pelo módulo Aprendizado hoje",
+      en: "Use the Learning module today",
+      es: "Pasar por el módulo Aprendizaje hoy",
+      fr: "Passer par le module Apprentissage aujourd'hui",
+      it: "Passare dal modulo Apprendimento oggi",
     },
     time_items_total: {
       pt: "Organizar {{count}} passo(s) no módulo Tempo",
@@ -1692,12 +1938,26 @@ function getTaskTitle(
       fr: "Organiser {{count}} étape(s) dans Temps",
       it: "Organizzare {{count}} passo/i in Tempo",
     },
+    time_today: {
+      pt: "Passar pelo módulo Tempo hoje",
+      en: "Use the Time module today",
+      es: "Pasar por el módulo Tiempo hoy",
+      fr: "Passer par le module Temps aujourd'hui",
+      it: "Passare dal modulo Tempo oggi",
+    },
     work_items_total: {
       pt: "Definir {{count}} avanço(s) no Trabalho",
       en: "Define {{count}} work progress step(s)",
       es: "Definir {{count}} avance(s) en Trabajo",
       fr: "Définir {{count}} avancée(s) dans Travail",
       it: "Definire {{count}} progresso/i in Lavoro",
+    },
+    work_today: {
+      pt: "Passar pelo módulo Trabalho hoje",
+      en: "Use the Work module today",
+      es: "Pasar por el módulo Trabajo hoy",
+      fr: "Passer par le module Travail aujourd'hui",
+      it: "Passare dal modulo Lavoro oggi",
     },
     leisure_items_total: {
       pt: "Registrar {{count}} momento(s) de lazer",
@@ -1706,12 +1966,26 @@ function getTaskTitle(
       fr: "Enregistrer {{count}} moment(s) de loisir",
       it: "Registrare {{count}} momento/i di svago",
     },
+    leisure_today: {
+      pt: "Registrar {{count}} momento(s) de lazer hoje",
+      en: "Register {{count}} leisure moment(s) today",
+      es: "Registrar {{count}} momento(s) de ocio hoy",
+      fr: "Enregistrer {{count}} moment(s) de loisir aujourd'hui",
+      it: "Registrare {{count}} momento/i di svago oggi",
+    },
     spiritual_items_total: {
       pt: "Registrar {{count}} prática(s) de espiritualidade",
       en: "Register {{count}} spirituality practice(s)",
       es: "Registrar {{count}} práctica(s) de espiritualidad",
       fr: "Enregistrer {{count}} pratique(s) de spiritualité",
       it: "Registrare {{count}} pratica/he di spiritualità",
+    },
+    spiritual_today: {
+      pt: "Registrar {{count}} prática(s) de espiritualidade hoje",
+      en: "Register {{count}} spirituality practice(s) today",
+      es: "Registrar {{count}} práctica(s) de espiritualidad hoy",
+      fr: "Enregistrer {{count}} pratique(s) de spiritualité aujourd'hui",
+      it: "Registrare {{count}} pratica/he di spiritualità oggi",
     },
     habits_total: {
       pt: "Ter {{count}} hábito(s) cadastrado(s)",
@@ -1773,6 +2047,202 @@ function getWeeklyGoal(language: AppLanguage, area: LifeArea) {
 }
 
 function getWeeklyPlan(language: AppLanguage, area: LifeArea) {
+  if (area === "financeiro") {
+    const localizedPlan = {
+      pt: [
+        {
+          title: "Base real do mês",
+          action:
+            "No primeiro dia, alimente o app com contas fixas e movimentações reais para a IA entender como seu dinheiro está hoje.",
+        },
+        {
+          title: "Vida financeira conectada",
+          action:
+            "Depois da base, a IA libera tarefas em metas, saúde, tempo, trabalho, aprendizado, hábitos, lazer e espiritualidade para organizar sua vida como sistema.",
+        },
+        {
+          title: "Ritmo que sustenta",
+          action:
+            "Repita o cuidado diário pelos módulos e mantenha o dinheiro ligado à sua rotina, não só ao saldo.",
+        },
+        {
+          title: "Decisões com contexto",
+          action:
+            "A cada dia concluído, a IA usa o que você preencheu para ajustar o próximo passo e orientar melhor suas decisões.",
+        },
+        {
+          title: "Organização sem isolamento",
+          action:
+            "O Dinheiro continua sendo a base, mas o plano exige ação nos outros módulos para atacar a causa do caos e não apenas o sintoma.",
+        },
+        {
+          title: "Leitura madura da sua semana",
+          action:
+            "Com mais módulos alimentados, a IA passa a ler seu momento com mais precisão e mostra o que ainda trava sua vida.",
+        },
+        {
+          title: "Fechamento em sistema",
+          action:
+            "Você encerra a semana com o dinheiro conectado a metas, hábitos, saúde, tempo, trabalho, aprendizado, lazer e espiritualidade.",
+        },
+      ],
+      en: [
+        {
+          title: "Real monthly base",
+          action:
+            "On day one, feed the app with fixed bills and real transactions so the AI can understand your current financial picture.",
+        },
+        {
+          title: "Connected financial life",
+          action:
+            "After the base is ready, the AI unlocks tasks in goals, health, time, work, learning, habits, leisure, and spirituality to organize your life as one system.",
+        },
+        {
+          title: "A rhythm that holds",
+          action:
+            "Repeat the daily care across modules and keep money connected to your routine, not only to your balance.",
+        },
+        {
+          title: "Decisions with context",
+          action:
+            "With each completed day, the AI uses what you filled in to adjust the next step and guide your decisions better.",
+        },
+        {
+          title: "Organization without silos",
+          action:
+            "Money remains the base, but the plan asks for action in the other modules so you address causes, not only symptoms.",
+        },
+        {
+          title: "A mature weekly reading",
+          action:
+            "With more modules filled in, the AI reads your moment more accurately and highlights what is still blocking your life.",
+        },
+        {
+          title: "System-level close",
+          action:
+            "You finish the week with money connected to goals, habits, health, time, work, learning, leisure, and spirituality.",
+        },
+      ],
+      es: [
+        {
+          title: "Base real del mes",
+          action:
+            "En el primer día, alimenta la app con cuentas fijas y movimientos reales para que la IA entienda cómo está hoy tu dinero.",
+        },
+        {
+          title: "Vida financiera conectada",
+          action:
+            "Después de la base, la IA desbloquea tareas en metas, salud, tiempo, trabajo, aprendizaje, hábitos, ocio y espiritualidad para organizar tu vida como un sistema.",
+        },
+        {
+          title: "Ritmo que sostiene",
+          action:
+            "Repite el cuidado diario entre módulos y mantén el dinero conectado a tu rutina, no solo al saldo.",
+        },
+        {
+          title: "Decisiones con contexto",
+          action:
+            "Con cada día completado, la IA usa lo que registraste para ajustar el siguiente paso y orientar mejor tus decisiones.",
+        },
+        {
+          title: "Organización sin aislar áreas",
+          action:
+            "Dinero sigue siendo la base, pero el plan exige acción en los otros módulos para atacar la causa del caos y no solo el síntoma.",
+        },
+        {
+          title: "Lectura madura de la semana",
+          action:
+            "Con más módulos alimentados, la IA pasa a leer tu momento con más precisión y muestra qué sigue bloqueando tu vida.",
+        },
+        {
+          title: "Cierre como sistema",
+          action:
+            "Cierras la semana con el dinero conectado a metas, hábitos, salud, tiempo, trabajo, aprendizaje, ocio y espiritualidad.",
+        },
+      ],
+      fr: [
+        {
+          title: "Base réelle du mois",
+          action:
+            "Le premier jour, alimentez l'app avec vos charges fixes et vos mouvements réels pour que l'IA comprenne votre situation financière actuelle.",
+        },
+        {
+          title: "Vie financière connectée",
+          action:
+            "Après cette base, l'IA débloque des tâches dans objectifs, santé, temps, travail, apprentissage, habitudes, loisirs et spiritualité pour organiser votre vie comme un système.",
+        },
+        {
+          title: "Un rythme qui tient",
+          action:
+            "Répétez ce soin quotidien dans les modules et gardez l'argent lié à votre routine, pas seulement à votre solde.",
+        },
+        {
+          title: "Décisions avec contexte",
+          action:
+            "À chaque jour terminé, l'IA utilise ce que vous avez rempli pour ajuster l'étape suivante et mieux guider vos décisions.",
+        },
+        {
+          title: "Organisation sans silos",
+          action:
+            "L'Argent reste la base, mais le plan demande des actions dans les autres modules pour traiter la cause du désordre, pas seulement le symptôme.",
+        },
+        {
+          title: "Lecture plus mature de la semaine",
+          action:
+            "Avec plus de modules alimentés, l'IA lit votre moment avec davantage de précision et montre ce qui bloque encore votre vie.",
+        },
+        {
+          title: "Clôture en système",
+          action:
+            "Vous terminez la semaine avec l'argent connecté aux objectifs, habitudes, santé, temps, travail, apprentissage, loisirs et spiritualité.",
+        },
+      ],
+      it: [
+        {
+          title: "Base reale del mese",
+          action:
+            "Nel primo giorno, alimenta l'app con spese fisse e movimenti reali così l'IA può capire com'è davvero la tua situazione finanziaria.",
+        },
+        {
+          title: "Vita finanziaria connessa",
+          action:
+            "Dopo la base, l'IA sblocca attività in obiettivi, salute, tempo, lavoro, apprendimento, abitudini, svago e spiritualità per organizzare la tua vita come un sistema.",
+        },
+        {
+          title: "Un ritmo che regge",
+          action:
+            "Ripeti questa cura quotidiana nei moduli e mantieni il denaro collegato alla tua routine, non solo al saldo.",
+        },
+        {
+          title: "Decisioni con contesto",
+          action:
+            "Ogni giorno completato permette all'IA di usare ciò che hai compilato per regolare il passo successivo e guidare meglio le tue decisioni.",
+        },
+        {
+          title: "Organizzazione senza silos",
+          action:
+            "Il Denaro resta la base, ma il piano richiede azione anche negli altri moduli per affrontare la causa del caos e non solo il sintomo.",
+        },
+        {
+          title: "Lettura più matura della settimana",
+          action:
+            "Con più moduli alimentati, l'IA legge il tuo momento con maggiore precisione e mostra cosa sta ancora bloccando la tua vita.",
+        },
+        {
+          title: "Chiusura come sistema",
+          action:
+            "Chiudi la settimana con il denaro collegato a obiettivi, abitudini, salute, tempo, lavoro, apprendimento, svago e spiritualità.",
+        },
+      ],
+    } as const;
+
+    return localizedPlan[language].map((item, index) => ({
+      day: index + 1,
+      title: item.title,
+      action: item.action,
+    }));
+  }
+
   const areaLabel = getLowerAreaLabel(area, language);
 
   return GENERIC_WEEKLY_PLAN_TITLES[language].map((title, index) => ({
@@ -1950,14 +2420,8 @@ export function normalizeLifeJourneyPlan(
 
   const primaryArea = raw.primaryArea;
   const secondaryArea = raw.secondaryArea;
-  const normalizedDaysBase =
-    raw.journeyDays && raw.journeyDays.length > 0
-      ? raw.journeyDays
-      : buildJourneyDays(primaryArea, language);
-  const normalizedWeeklyPlanBase =
-    raw.weeklyPlan && raw.weeklyPlan.length > 0
-      ? raw.weeklyPlan
-      : getWeeklyPlan(language, primaryArea);
+  const normalizedDaysBase = buildJourneyDays(primaryArea, language);
+  const normalizedWeeklyPlanBase = getWeeklyPlan(language, primaryArea);
 
   return {
     primaryArea,
@@ -1975,17 +2439,17 @@ export function normalizeLifeJourneyPlan(
       ...day,
       title: getJourneyDayTitle(language, index),
       summary: getJourneyDaySummary(language, primaryArea, index),
-      tasks: day.tasks.map((task) => ({
+      tasks: day.tasks.map((task, taskIndex) => ({
         ...task,
+        id: `${primaryArea}_day_${index + 1}_task_${taskIndex + 1}`,
         title: getTaskTitle(language, task.validationType, task.targetValue),
       })),
     })),
     weeklyPlan: normalizedWeeklyPlanBase.map((day, index) => {
-      const next = getWeeklyPlan(language, primaryArea)[index];
       return {
         day: day.day || index + 1,
-        title: next?.title || day.title,
-        action: next?.action || day.action,
+        title: day.title,
+        action: day.action,
       };
     }),
     firstSteps: getFirstSteps(language, primaryArea) || AREA_STEPS[primaryArea],
@@ -2002,6 +2466,15 @@ export function createInitialJourneyProgress(): AIJourneyProgress {
     completedDays: [],
     totalXp: 0,
     startedAt: new Date().toISOString(),
+    analysisStatus: "idle",
+    analysisStartedAt: undefined,
+    analysisCompletedAt: undefined,
+    nextDayUnlockAt: undefined,
+    pendingFeedbackTitle: undefined,
+    pendingFeedbackText: undefined,
+    latestFeedbackTitle: undefined,
+    latestFeedbackText: undefined,
+    lastAnalyzedDay: undefined,
   };
 }
 
@@ -2020,6 +2493,15 @@ export function normalizeJourneyProgress(
     totalXp: raw.totalXp || 0,
     startedAt: raw.startedAt || new Date().toISOString(),
     lastCompletedAt: raw.lastCompletedAt,
+    analysisStatus: raw.analysisStatus || "idle",
+    analysisStartedAt: raw.analysisStartedAt,
+    analysisCompletedAt: raw.analysisCompletedAt,
+    nextDayUnlockAt: raw.nextDayUnlockAt,
+    pendingFeedbackTitle: raw.pendingFeedbackTitle,
+    pendingFeedbackText: raw.pendingFeedbackText,
+    latestFeedbackTitle: raw.latestFeedbackTitle,
+    latestFeedbackText: raw.latestFeedbackText,
+    lastAnalyzedDay: raw.lastAnalyzedDay,
     finishedAt: raw.finishedAt,
   } satisfies AIJourneyProgress;
 }
@@ -2039,18 +2521,27 @@ function isSameDayIso(dateA?: string, dateB?: string) {
 
 type JourneyContext = {
   moneyEntriesCount: number;
+  moneyEntriesTodayCount: number;
   fixedBillsCount: number;
   goalsCount: number;
+  goalsTodayCount: number;
   learningItemsCount: number;
+  learningTodayCount: number;
   timeItemsCount: number;
+  timeTodayCount: number;
   workItemsCount: number;
+  workTodayCount: number;
   leisureItemsCount: number;
+  leisureTodayCount: number;
   spiritualItemsCount: number;
+  spiritualTodayCount: number;
   habitsCount: number;
   habitsCompletedToday: number;
   medicationsCount: number;
   medicationsTakenToday: number;
   checkinTodayCount: number;
+  latestExperienceRating: number | null;
+  latestExperienceNote: string;
 };
 
 async function readJourneyContext(): Promise<JourneyContext> {
@@ -2066,6 +2557,7 @@ async function readJourneyContext(): Promise<JourneyContext> {
     habitsRaw,
     medsRaw,
     checkinRaw,
+    experienceRaw,
   ] =
     await Promise.all([
       AsyncStorage.getItem(MONEY_ENTRIES_KEY),
@@ -2079,9 +2571,11 @@ async function readJourneyContext(): Promise<JourneyContext> {
       AsyncStorage.getItem(HABITS_KEY),
       AsyncStorage.getItem(MEDICATIONS_KEY),
       AsyncStorage.getItem(CHECKIN_KEY),
+      AsyncStorage.getItem(AI_EXPERIENCE_FEEDBACK_KEY),
     ]);
 
   const today = getTodayDateKey();
+  const nowIso = new Date().toISOString();
 
   const moneyEntries = moneyRaw ? JSON.parse(moneyRaw) : [];
   const bills = billsRaw ? JSON.parse(billsRaw) : [];
@@ -2094,6 +2588,15 @@ async function readJourneyContext(): Promise<JourneyContext> {
   const habits = habitsRaw ? JSON.parse(habitsRaw) : [];
   const medications = medsRaw ? JSON.parse(medsRaw) : [];
   const checkins = checkinRaw ? JSON.parse(checkinRaw) : [];
+  const experienceEntries = experienceRaw ? JSON.parse(experienceRaw) : [];
+  const latestExperienceEntry = Array.isArray(experienceEntries)
+    ? [...experienceEntries]
+        .sort(
+          (a: any, b: any) =>
+            new Date(b?.createdAt || 0).getTime() -
+            new Date(a?.createdAt || 0).getTime()
+        )[0] ?? null
+    : null;
 
   const habitsCompletedToday = Array.isArray(habits)
     ? habits.reduce((acc: number, habit: any) => {
@@ -2118,22 +2621,83 @@ async function readJourneyContext(): Promise<JourneyContext> {
         .length
     : 0;
 
+  const goalsTodayCount = Array.isArray(goals)
+    ? goals.filter((item: any) => isSameDayIso(item?.createdAt, nowIso)).length
+    : 0;
+
+  const moneyEntriesTodayCount = Array.isArray(moneyEntries)
+    ? moneyEntries.filter((item: any) => isSameDayIso(item?.createdAt, nowIso))
+        .length
+    : 0;
+
+  const learningTodayCount = Array.isArray(learning)
+    ? learning.filter(
+        (item: any) =>
+          item?.dateKey === today &&
+          (String(item?.objective || "").trim().length > 0 ||
+            (Array.isArray(item?.tasks) && item.tasks.length > 0))
+      ).length
+    : 0;
+
+  const timeTodayCount = Array.isArray(timeItems)
+    ? timeItems.filter(
+        (item: any) =>
+          item?.dateKey === today &&
+          (String(item?.focus || "").trim().length > 0 ||
+            (Array.isArray(item?.tasks) && item.tasks.length > 0))
+      ).length
+    : 0;
+
+  const workTodayCount = Array.isArray(workItems)
+    ? workItems.filter(
+        (item: any) =>
+          item?.dateKey === today &&
+          (String(item?.objective || "").trim().length > 0 ||
+            (Array.isArray(item?.tasks) && item.tasks.length > 0))
+      ).length
+    : 0;
+
+  const leisureTodayCount = Array.isArray(leisureItems)
+    ? leisureItems.filter((item: any) => isSameDayIso(item?.createdAt, nowIso))
+        .length
+    : 0;
+
+  const spiritualTodayCount = Array.isArray(spiritualItems)
+    ? spiritualItems.filter((item: any) => isSameDayIso(item?.createdAt, nowIso))
+        .length
+    : 0;
+
   return {
     moneyEntriesCount: Array.isArray(moneyEntries) ? moneyEntries.length : 0,
+    moneyEntriesTodayCount,
     fixedBillsCount: Array.isArray(bills) ? bills.length : 0,
     goalsCount: Array.isArray(goals) ? goals.length : 0,
+    goalsTodayCount,
     learningItemsCount: Array.isArray(learning) ? learning.length : 0,
+    learningTodayCount,
     timeItemsCount: Array.isArray(timeItems) ? timeItems.length : 0,
+    timeTodayCount,
     workItemsCount: Array.isArray(workItems) ? workItems.length : 0,
+    workTodayCount,
     leisureItemsCount: Array.isArray(leisureItems) ? leisureItems.length : 0,
+    leisureTodayCount,
     spiritualItemsCount: Array.isArray(spiritualItems)
       ? spiritualItems.length
       : 0,
+    spiritualTodayCount,
     habitsCount: Array.isArray(habits) ? habits.length : 0,
     habitsCompletedToday,
     medicationsCount: Array.isArray(medications) ? medications.length : 0,
     medicationsTakenToday,
     checkinTodayCount,
+    latestExperienceRating:
+      typeof latestExperienceEntry?.rating === "number"
+        ? latestExperienceEntry.rating
+        : null,
+    latestExperienceNote:
+      typeof latestExperienceEntry?.note === "string"
+        ? latestExperienceEntry.note.trim()
+        : "",
   };
 }
 
@@ -2144,20 +2708,34 @@ function getTaskCurrentValue(
   switch (task.validationType) {
     case "money_entries_total":
       return context.moneyEntriesCount;
+    case "money_entries_today":
+      return context.moneyEntriesTodayCount;
     case "fixed_bills_total":
       return context.fixedBillsCount;
     case "goals_total":
       return context.goalsCount;
+    case "goals_today":
+      return context.goalsTodayCount;
     case "learning_items_total":
       return context.learningItemsCount;
+    case "learning_today":
+      return context.learningTodayCount;
     case "time_items_total":
       return context.timeItemsCount;
+    case "time_today":
+      return context.timeTodayCount;
     case "work_items_total":
       return context.workItemsCount;
+    case "work_today":
+      return context.workTodayCount;
     case "leisure_items_total":
       return context.leisureItemsCount;
+    case "leisure_today":
+      return context.leisureTodayCount;
     case "spiritual_items_total":
       return context.spiritualItemsCount;
+    case "spiritual_today":
+      return context.spiritualTodayCount;
     case "habits_total":
       return context.habitsCount;
     case "habits_completed_today":
@@ -2171,6 +2749,663 @@ function getTaskCurrentValue(
     default:
       return 0;
   }
+}
+
+type FinanceJourneyModuleKey =
+  | "financeiro"
+  | "saude"
+  | "metas"
+  | "aprendizado"
+  | "habitos"
+  | "tempo"
+  | "trabalho"
+  | "lazer"
+  | "espiritualidade";
+
+const FINANCE_JOURNEY_MODULE_ORDER: FinanceJourneyModuleKey[] = [
+  "financeiro",
+  "saude",
+  "metas",
+  "aprendizado",
+  "habitos",
+  "tempo",
+  "trabalho",
+  "lazer",
+  "espiritualidade",
+];
+
+function getNextLocalMidnightIso(baseDate = new Date()) {
+  const next = new Date(baseDate);
+  next.setHours(24, 0, 0, 0);
+  return next.toISOString();
+}
+
+const JOURNEY_ANALYSIS_DELAY_MS = 2400;
+
+function getFinanceJourneyModuleLabels(
+  language: AppLanguage = DEFAULT_APP_LANGUAGE
+) {
+  return {
+    financeiro: {
+      pt: "Dinheiro",
+      en: "Money",
+      es: "Dinero",
+      fr: "Argent",
+      it: "Denaro",
+    }[language],
+    saude: {
+      pt: "Saúde",
+      en: "Health",
+      es: "Salud",
+      fr: "Santé",
+      it: "Salute",
+    }[language],
+    metas: {
+      pt: "Metas",
+      en: "Goals",
+      es: "Metas",
+      fr: "Objectifs",
+      it: "Obiettivi",
+    }[language],
+    aprendizado: {
+      pt: "Aprendizado",
+      en: "Learning",
+      es: "Aprendizaje",
+      fr: "Apprentissage",
+      it: "Apprendimento",
+    }[language],
+    habitos: {
+      pt: "Hábitos",
+      en: "Habits",
+      es: "Hábitos",
+      fr: "Habitudes",
+      it: "Abitudini",
+    }[language],
+    tempo: {
+      pt: "Tempo",
+      en: "Time",
+      es: "Tiempo",
+      fr: "Temps",
+      it: "Tempo",
+    }[language],
+    trabalho: {
+      pt: "Trabalho",
+      en: "Work",
+      es: "Trabajo",
+      fr: "Travail",
+      it: "Lavoro",
+    }[language],
+    lazer: {
+      pt: "Lazer",
+      en: "Leisure",
+      es: "Ocio",
+      fr: "Loisirs",
+      it: "Svago",
+    }[language],
+    espiritualidade: {
+      pt: "Espiritualidade",
+      en: "Spirituality",
+      es: "Espiritualidad",
+      fr: "Spiritualité",
+      it: "Spiritualità",
+    }[language],
+  } satisfies Record<FinanceJourneyModuleKey, string>;
+}
+
+function getExperienceNoteBias(note: string) {
+  const normalized = note
+    .toLocaleLowerCase(LANGUAGE_LOCALE.pt)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+
+  if (!normalized) {
+    return {} as Partial<Record<FinanceJourneyModuleKey, number>>;
+  }
+
+  const noteBias: Partial<Record<FinanceJourneyModuleKey, number>> = {};
+
+  const applyBias = (
+    key: FinanceJourneyModuleKey,
+    value: number,
+    patterns: RegExp[]
+  ) => {
+    if (patterns.some((pattern) => pattern.test(normalized))) {
+      noteBias[key] = Math.min((noteBias[key] ?? 0) + value, 0);
+    }
+  };
+
+  applyBias("financeiro", -0.7, [
+    /dinhe/,
+    /finan/,
+    /gasto/,
+    /divid/,
+    /debt/,
+    /money/,
+    /budget/,
+    /saldo/,
+  ]);
+  applyBias("saude", -0.7, [
+    /saud/,
+    /health/,
+    /sleep/,
+    /sono/,
+    /dor/,
+    /cansa/,
+    /energy/,
+    /energia/,
+  ]);
+  applyBias("tempo", -0.7, [
+    /tempo/,
+    /time/,
+    /agenda/,
+    /rush/,
+    /correria/,
+    /rotina/,
+    /rutina/,
+    /schedule/,
+  ]);
+  applyBias("trabalho", -0.65, [
+    /trabal/,
+    /work/,
+    /job/,
+    /career/,
+    /carreira/,
+    /lavor/,
+  ]);
+  applyBias("aprendizado", -0.55, [
+    /aprend/,
+    /learn/,
+    /study/,
+    /estud/,
+    /curso/,
+    /course/,
+  ]);
+  applyBias("habitos", -0.55, [
+    /habit/,
+    /consisten/,
+    /ritmo/,
+    /disciplin/,
+  ]);
+  applyBias("lazer", -0.55, [
+    /lazer/,
+    /ocio/,
+    /loisir/,
+    /svago/,
+    /descans/,
+    /rest/,
+  ]);
+  applyBias("espiritualidade", -0.55, [
+    /espirit/,
+    /orac/,
+    /pray/,
+    /faith/,
+    /fe\b/,
+    /medita/,
+    /paz/,
+    /peace/,
+  ]);
+
+  return noteBias;
+}
+
+function getFinanceJourneyModuleRank(
+  context: JourneyContext,
+  language: AppLanguage = DEFAULT_APP_LANGUAGE,
+  primaryArea: LifeArea = "financeiro"
+) {
+  const labels = getFinanceJourneyModuleLabels(language);
+  const lowExperienceBias =
+    context.latestExperienceRating !== null && context.latestExperienceRating <= 2
+      ? {
+          saude: -0.8,
+          lazer: -0.7,
+          espiritualidade: -0.65,
+          tempo: -0.55,
+          habitos: -0.45,
+        }
+      : {};
+  const highExperienceBias =
+    context.latestExperienceRating !== null && context.latestExperienceRating >= 4
+      ? {
+          trabalho: -0.7,
+          aprendizado: -0.6,
+          metas: -0.55,
+          financeiro: -0.4,
+        }
+      : {};
+  const noteBias = getExperienceNoteBias(context.latestExperienceNote);
+  const experienceBias = {
+    ...lowExperienceBias,
+    ...highExperienceBias,
+    ...noteBias,
+  } as Partial<Record<FinanceJourneyModuleKey, number>>;
+  const getBias = (key: FinanceJourneyModuleKey) =>
+    (experienceBias[key] ?? 0) + (key === primaryArea ? -0.45 : 0);
+
+  return [
+    {
+      key: "financeiro" as const,
+      label: labels.financeiro,
+      score:
+        Math.min(4, context.fixedBillsCount + context.moneyEntriesCount) +
+        getBias("financeiro"),
+    },
+    {
+      key: "saude" as const,
+      label: labels.saude,
+      score:
+        Math.min(2, context.medicationsCount + context.medicationsTakenToday) +
+        getBias("saude"),
+    },
+    {
+      key: "metas" as const,
+      label: labels.metas,
+      score:
+        Math.min(2, context.goalsCount + context.goalsTodayCount) +
+        getBias("metas"),
+    },
+    {
+      key: "aprendizado" as const,
+      label: labels.aprendizado,
+      score:
+        Math.min(2, context.learningItemsCount + context.learningTodayCount) +
+        getBias("aprendizado"),
+    },
+    {
+      key: "habitos" as const,
+      label: labels.habitos,
+      score:
+        Math.min(2, context.habitsCount + context.habitsCompletedToday) +
+        getBias("habitos"),
+    },
+    {
+      key: "tempo" as const,
+      label: labels.tempo,
+      score:
+        Math.min(2, context.timeItemsCount + context.timeTodayCount) +
+        getBias("tempo"),
+    },
+    {
+      key: "trabalho" as const,
+      label: labels.trabalho,
+      score:
+        Math.min(2, context.workItemsCount + context.workTodayCount) +
+        getBias("trabalho"),
+    },
+    {
+      key: "lazer" as const,
+      label: labels.lazer,
+      score:
+        Math.min(2, context.leisureItemsCount + context.leisureTodayCount) +
+        getBias("lazer"),
+    },
+    {
+      key: "espiritualidade" as const,
+      label: labels.espiritualidade,
+      score:
+        Math.min(2, context.spiritualItemsCount + context.spiritualTodayCount) +
+        getBias("espiritualidade"),
+    },
+  ].sort((a, b) => a.score - b.score);
+}
+
+function buildFinanceDynamicTaskMap(context: JourneyContext): Record<FinanceJourneyModuleKey, JourneyTaskTemplate> {
+  return {
+    financeiro: {
+      title: "",
+      validationType: "money_entries_today",
+      targetValue: 1,
+    },
+    saude:
+      context.medicationsCount > 0
+        ? {
+            title: "",
+            validationType: "medications_taken_today",
+            targetValue: 1,
+          }
+        : {
+            title: "",
+            validationType: "medications_total",
+            targetValue: 1,
+          },
+    metas:
+      context.goalsCount > 0
+        ? {
+            title: "",
+            validationType: "goals_today",
+            targetValue: 1,
+          }
+        : {
+            title: "",
+            validationType: "goals_total",
+            targetValue: 1,
+          },
+    aprendizado:
+      context.learningItemsCount > 0
+        ? {
+            title: "",
+            validationType: "learning_today",
+            targetValue: 1,
+          }
+        : {
+            title: "",
+            validationType: "learning_items_total",
+            targetValue: 1,
+          },
+    habitos:
+      context.habitsCount > 0
+        ? {
+            title: "",
+            validationType: "habits_completed_today",
+            targetValue: 1,
+          }
+        : {
+            title: "",
+            validationType: "habits_total",
+            targetValue: 1,
+          },
+    tempo:
+      context.timeItemsCount > 0
+        ? {
+            title: "",
+            validationType: "time_today",
+            targetValue: 1,
+          }
+        : {
+            title: "",
+            validationType: "time_items_total",
+            targetValue: 1,
+          },
+    trabalho:
+      context.workItemsCount > 0
+        ? {
+            title: "",
+            validationType: "work_today",
+            targetValue: 1,
+          }
+        : {
+            title: "",
+            validationType: "work_items_total",
+            targetValue: 1,
+          },
+    lazer:
+      context.leisureItemsCount > 0
+        ? {
+            title: "",
+            validationType: "leisure_today",
+            targetValue: 1,
+          }
+        : {
+            title: "",
+            validationType: "leisure_items_total",
+            targetValue: 1,
+          },
+    espiritualidade:
+      context.spiritualItemsCount > 0
+        ? {
+            title: "",
+            validationType: "spiritual_today",
+            targetValue: 1,
+          }
+        : {
+            title: "",
+            validationType: "spiritual_items_total",
+            targetValue: 1,
+          },
+  };
+}
+
+function buildFinanceJourneyDays(
+  context: JourneyContext,
+  language: AppLanguage = DEFAULT_APP_LANGUAGE,
+  primaryArea: LifeArea = "financeiro"
+): AIJourneyDay[] {
+  const titles = {
+    pt: [
+      "Mapa inicial da sua vida",
+      "Primeiro ajuste integrado",
+      "Rotina que sustenta o sistema",
+      "Direção com clareza",
+      "Decisões mais conscientes",
+      "Base mais estável",
+      "Fechamento da primeira fase",
+    ],
+    en: [
+      "Initial map of your life",
+      "First integrated adjustment",
+      "A routine that supports the system",
+      "Direction with clarity",
+      "More conscious decisions",
+      "A more stable base",
+      "Closing the first phase",
+    ],
+    es: [
+      "Mapa inicial de tu vida",
+      "Primer ajuste integrado",
+      "Rutina que sostiene el sistema",
+      "Dirección con claridad",
+      "Decisiones más conscientes",
+      "Base más estable",
+      "Cierre de la primera fase",
+    ],
+    fr: [
+      "Carte initiale de votre vie",
+      "Premier ajustement intégré",
+      "Une routine qui soutient le système",
+      "Direction avec clarté",
+      "Des décisions plus conscientes",
+      "Une base plus stable",
+      "Clôture de la première phase",
+    ],
+    it: [
+      "Mappa iniziale della tua vita",
+      "Primo aggiustamento integrato",
+      "Una routine che sostiene il sistema",
+      "Direzione con chiarezza",
+      "Decisioni più consapevoli",
+      "Base più stabile",
+      "Chiusura della prima fase",
+    ],
+  } as const;
+
+  const rankedModules = getFinanceJourneyModuleRank(
+    context,
+    language,
+    primaryArea
+  );
+  const dynamicTaskMap = buildFinanceDynamicTaskMap(context);
+  const labels = getFinanceJourneyModuleLabels(language);
+  const primaryAreaLabel = getLifeAreaLabel(primaryArea, language);
+
+  const intakeTasks: JourneyTaskTemplate[] = [
+    { title: "", validationType: "fixed_bills_total", targetValue: 1 },
+    { title: "", validationType: "money_entries_total", targetValue: 2 },
+    { title: "", validationType: "medications_total", targetValue: 1 },
+    { title: "", validationType: "goals_total", targetValue: 1 },
+    { title: "", validationType: "learning_today", targetValue: 1 },
+    { title: "", validationType: "habits_total", targetValue: 1 },
+    { title: "", validationType: "time_today", targetValue: 1 },
+    { title: "", validationType: "work_today", targetValue: 1 },
+    { title: "", validationType: "leisure_today", targetValue: 1 },
+    { title: "", validationType: "spiritual_today", targetValue: 1 },
+  ];
+
+  const intakeSummary = interpolate(
+    {
+      pt: "Alimente dinheiro, saúde, metas, aprendizado, hábitos, tempo, trabalho, lazer e espiritualidade para a IA entender sua vida real antes de sugerir o Dia 2 da sua jornada em {{primaryArea}}.",
+      en: "Feed Money, Health, Goals, Learning, Habits, Time, Work, Leisure, and Spirituality so the AI can understand your real life before it suggests Day 2 of your {{primaryArea}} journey.",
+      es: "Alimenta Dinero, Salud, Metas, Aprendizaje, Hábitos, Tiempo, Trabajo, Ocio y Espiritualidad para que la IA entienda tu vida real antes de sugerir el Día 2 de tu jornada en {{primaryArea}}.",
+      fr: "Alimentez Argent, Santé, Objectifs, Apprentissage, Habitudes, Temps, Travail, Loisirs et Spiritualité pour que l'IA comprenne votre vie réelle avant de suggérer le Jour 2 de votre parcours en {{primaryArea}}.",
+      it: "Alimenta Denaro, Salute, Obiettivi, Apprendimento, Abitudini, Tempo, Lavoro, Svago e Spiritualità così l'IA può capire la tua vita reale prima di suggerire il Giorno 2 del tuo percorso in {{primaryArea}}.",
+    }[language],
+    { primaryArea: primaryAreaLabel }
+  );
+
+  const followUpIntro = {
+    pt: "A IA leu sua base e quer reforçar {{focusA}} e {{focusB}} para que sua jornada em {{primaryArea}} organize o restante da vida junto.",
+    en: "The AI has read your base and wants to strengthen {{focusA}} and {{focusB}} so your {{primaryArea}} journey can organize the rest of your life together.",
+    es: "La IA ya leyó tu base y quiere reforzar {{focusA}} y {{focusB}} para que tu jornada en {{primaryArea}} organice el resto de tu vida en conjunto.",
+    fr: "L'IA a déjà lu votre base et veut renforcer {{focusA}} et {{focusB}} pour que votre parcours en {{primaryArea}} organise aussi le reste de votre vie.",
+    it: "L'IA ha già letto la tua base e vuole rafforzare {{focusA}} e {{focusB}} perché il tuo percorso in {{primaryArea}} organizzi anche il resto della tua vita.",
+  } as const;
+
+  const rewardByDay = [120, 90, 95, 95, 100, 100, 110];
+
+  const buildTask = (
+    task: JourneyTaskTemplate,
+    day: number,
+    taskIndex: number
+  ): AIJourneyTask => ({
+    id: `${primaryArea}_day_${day}_task_${taskIndex + 1}`,
+    title: getTaskTitle(language, task.validationType, task.targetValue),
+    validationType: task.validationType,
+    targetValue: task.targetValue,
+    currentValue: 0,
+    completed: false,
+  });
+
+  const days: AIJourneyDay[] = [
+    {
+      day: 1,
+      title: titles[language][0],
+      summary: intakeSummary,
+      rewardXp: rewardByDay[0],
+      tasks: intakeTasks.map((task, index) => buildTask(task, 1, index)),
+    },
+  ];
+
+  for (let day = 2; day <= 7; day += 1) {
+    const focusA =
+      rankedModules[(day - 2) % rankedModules.length]?.key ?? "tempo";
+    const focusB =
+      rankedModules[(day - 1) % rankedModules.length]?.key ?? "trabalho";
+    const orderedModules = Array.from(
+      new Set<FinanceJourneyModuleKey>([
+        focusA,
+        focusB,
+        ...FINANCE_JOURNEY_MODULE_ORDER,
+      ])
+    );
+
+    const summary = interpolate(followUpIntro[language], {
+      focusA: labels[focusA],
+      focusB: labels[focusB],
+      primaryArea: primaryAreaLabel,
+    });
+
+    days.push({
+      day,
+      title: titles[language][day - 1],
+      summary,
+      rewardXp: rewardByDay[day - 1],
+      tasks: orderedModules.map((moduleKey, taskIndex) =>
+        buildTask(dynamicTaskMap[moduleKey], day, taskIndex)
+      ),
+    });
+  }
+
+  return days;
+}
+
+function buildFinanceCompletionFeedback(
+  completedDay: number,
+  context: JourneyContext,
+  language: AppLanguage = DEFAULT_APP_LANGUAGE,
+  primaryArea: LifeArea = "financeiro"
+) {
+  const rankedModules = getFinanceJourneyModuleRank(
+    context,
+    language,
+    primaryArea
+  );
+  const labels = getFinanceJourneyModuleLabels(language);
+  const weakestA = rankedModules[0]?.label ?? labels.tempo;
+  const weakestB = rankedModules[1]?.label ?? labels.trabalho;
+  const strongest = [...rankedModules].sort((a, b) => b.score - a.score);
+  const strongestA = strongest[0]?.label ?? labels.financeiro;
+  const strongestB = strongest[1]?.label ?? labels.saude;
+  const primaryAreaLabel = getLifeAreaLabel(primaryArea, language);
+  const nextDay = Math.min(7, completedDay + 1);
+  const noteSentence = context.latestExperienceNote
+    ? {
+        pt: "A IA também leu o que você compartilhou sobre a experiência de hoje para ajustar melhor o próximo dia.",
+        en: "The AI also read what you shared about today's experience to better tune the next day.",
+        es: "La IA también leyó lo que compartiste sobre la experiencia de hoy para ajustar mejor el próximo día.",
+        fr: "L'IA a aussi lu ce que vous avez partagé sur l'expérience d'aujourd'hui afin d'ajuster au mieux le jour suivant.",
+        it: "L'IA ha anche letto ciò che hai condiviso sull'esperienza di oggi per calibrare meglio il giorno successivo.",
+      }[language]
+    : "";
+  const experienceSentence =
+    context.latestExperienceRating === null
+      ? {
+          pt: "Se quiser, compartilhe na tela de evolução como foi o seu dia para a IA calibrar melhor o próximo passo.",
+          en: "If you want, share in the evolution screen how your day felt so the AI can calibrate the next step better.",
+          es: "Si quieres, comparte en la pantalla de evolución cómo se sintió tu día para que la IA calibre mejor el siguiente paso.",
+          fr: "Si vous le souhaitez, partagez dans l'écran d'évolution comment votre journée s'est passée afin que l'IA calibre mieux l'étape suivante.",
+          it: "Se vuoi, condividi nella schermata di evoluzione com'è andata la tua giornata così l'IA potrà calibrare meglio il passo successivo.",
+        }[language]
+      : context.latestExperienceRating <= 2
+        ? {
+            pt: "Como sua experiência recente pareceu mais pesada, a IA vai priorizar tarefas que devolvam base e alívio antes de aumentar a cobrança.",
+            en: "Because your recent experience felt heavier, the AI will prioritize tasks that restore stability and relief before increasing the pressure.",
+            es: "Como tu experiencia reciente se sintió más pesada, la IA priorizará tareas que devuelvan base y alivio antes de aumentar la exigencia.",
+            fr: "Comme votre expérience récente a semblé plus lourde, l'IA priorisera des tâches qui redonnent base et soulagement avant d'augmenter l'exigence.",
+            it: "Poiché la tua esperienza recente è sembrata più pesante, l'IA darà priorità a compiti che riportino base e sollievo prima di aumentare l'intensità.",
+          }[language]
+        : context.latestExperienceRating >= 4
+          ? {
+              pt: "Como sua experiência recente foi mais positiva, a IA pode elevar um pouco o ritmo sem perder a organização do sistema.",
+              en: "Because your recent experience felt more positive, the AI can raise the pace a little without losing the system's organization.",
+              es: "Como tu experiencia reciente fue más positiva, la IA puede subir un poco el ritmo sin perder la organización del sistema.",
+              fr: "Comme votre expérience récente a été plus positive, l'IA peut augmenter légèrement le rythme sans perdre l'organisation du système.",
+              it: "Poiché la tua esperienza recente è stata più positiva, l'IA può alzare leggermente il ritmo senza perdere l'organizzazione del sistema.",
+            }[language]
+          : {
+              pt: "A IA também vai considerar como você está vivenciando a jornada para calibrar melhor a intensidade do próximo dia.",
+              en: "The AI will also consider how you are experiencing the journey to better calibrate the intensity of the next day.",
+              es: "La IA también tendrá en cuenta cómo estás viviendo la jornada para calibrar mejor la intensidad del próximo día.",
+              fr: "L'IA tiendra aussi compte de la manière dont vous vivez le parcours pour mieux calibrer l'intensité du jour suivant.",
+              it: "L'IA terrà conto anche di come stai vivendo il percorso per calibrare meglio l'intensità del giorno successivo.",
+            }[language];
+  const calibratedExperienceSentence = `${experienceSentence}${
+    noteSentence ? ` ${noteSentence}` : ""
+  }`;
+
+  if (completedDay === 1) {
+    return {
+      title: {
+        pt: "Leitura inicial concluída",
+        en: "Initial reading completed",
+        es: "Lectura inicial completada",
+        fr: "Lecture initiale terminée",
+        it: "Lettura iniziale completata",
+      }[language],
+      text: {
+        pt: `A IA já recebeu uma primeira leitura da sua vida para fortalecer ${primaryAreaLabel}. Sua base está mais presente em ${strongestA} e ${strongestB}, enquanto ${weakestA} e ${weakestB} ainda pedem mais cuidado. O Dia ${nextDay} será programado com base nisso e só será liberado à meia-noite. ${calibratedExperienceSentence}`,
+        en: `The AI has already received a first reading of your life to strengthen ${primaryAreaLabel}. Your base is stronger in ${strongestA} and ${strongestB}, while ${weakestA} and ${weakestB} still need more care. Day ${nextDay} will be programmed from that and will only unlock at midnight. ${calibratedExperienceSentence}`,
+        es: `La IA ya recibió una primera lectura de tu vida para fortalecer ${primaryAreaLabel}. Tu base está más presente en ${strongestA} y ${strongestB}, mientras que ${weakestA} y ${weakestB} todavía necesitan más atención. El Día ${nextDay} se programará con base en eso y solo se liberará a la medianoche. ${calibratedExperienceSentence}`,
+        fr: `L'IA a déjà reçu une première lecture de votre vie pour renforcer ${primaryAreaLabel}. Votre base est plus présente dans ${strongestA} et ${strongestB}, tandis que ${weakestA} et ${weakestB} demandent encore plus d'attention. Le Jour ${nextDay} sera programmé à partir de cela et ne sera libéré qu'à minuit. ${calibratedExperienceSentence}`,
+        it: `L'IA ha già ricevuto una prima lettura della tua vita per rafforzare ${primaryAreaLabel}. La tua base è più presente in ${strongestA} e ${strongestB}, mentre ${weakestA} e ${weakestB} richiedono ancora più attenzione. Il Giorno ${nextDay} verrà programmato partendo da questo e sarà sbloccato solo a mezzanotte. ${calibratedExperienceSentence}`,
+      }[language],
+    };
+  }
+
+  return {
+    title: {
+      pt: `Dia ${completedDay} concluído`,
+      en: `Day ${completedDay} completed`,
+      es: `Día ${completedDay} completado`,
+      fr: `Jour ${completedDay} terminé`,
+      it: `Giorno ${completedDay} completato`,
+    }[language],
+    text: {
+      pt: `A IA analisou tudo o que você concluiu hoje para fazer ${primaryAreaLabel} conversar com o resto da sua vida. O melhor sinal apareceu em ${strongestA} e ${strongestB}; a próxima atenção vai para ${weakestA} e ${weakestB}. O Dia ${nextDay} já está sendo programado e só será liberado à meia-noite. ${calibratedExperienceSentence}`,
+      en: `The AI analyzed everything you completed today to make ${primaryAreaLabel} talk to the rest of your life. The strongest signal appeared in ${strongestA} and ${strongestB}; the next focus will be ${weakestA} and ${weakestB}. Day ${nextDay} is already being programmed and will only unlock at midnight. ${calibratedExperienceSentence}`,
+      es: `La IA analizó todo lo que completaste hoy para hacer que ${primaryAreaLabel} converse con el resto de tu vida. La señal más fuerte apareció en ${strongestA} y ${strongestB}; la próxima atención irá a ${weakestA} y ${weakestB}. El Día ${nextDay} ya se está programando y solo se liberará a la medianoche. ${calibratedExperienceSentence}`,
+      fr: `L'IA a analysé tout ce que vous avez terminé aujourd'hui pour faire dialoguer ${primaryAreaLabel} avec le reste de votre vie. Le signal le plus fort est apparu dans ${strongestA} et ${strongestB} ; l'attention suivante ira vers ${weakestA} et ${weakestB}. Le Jour ${nextDay} est déjà en cours de programmation et ne sera libéré qu'à minuit. ${calibratedExperienceSentence}`,
+      it: `L'IA ha analizzato tutto ciò che hai completato oggi per fare in modo che ${primaryAreaLabel} dialoghi con il resto della tua vita. Il segnale più forte è apparso in ${strongestA} e ${strongestB}; la prossima attenzione andrà a ${weakestA} e ${weakestB}. Il Giorno ${nextDay} è già in programmazione e sarà sbloccato solo a mezzanotte. ${calibratedExperienceSentence}`,
+    }[language],
+  };
 }
 
 export async function evaluateJourney(
@@ -2189,8 +3424,72 @@ export async function evaluateJourney(
 
   const progress = normalizeJourneyProgress(rawProgress);
   const context = await readJourneyContext();
+  const baseJourneyDays = buildFinanceJourneyDays(
+    context,
+    language,
+    plan.primaryArea
+  );
 
-  const journeyDays = plan.journeyDays.map((day) => ({
+  const now = new Date();
+  let unlockedDays = Array.from(
+    new Set(
+      (progress.unlockedDays?.length ? progress.unlockedDays : [1]).filter(
+        (day) => day >= 1 && day <= baseJourneyDays.length
+      )
+    )
+  ).sort((a, b) => a - b);
+  let nextDayUnlockAt = progress.nextDayUnlockAt;
+  let analysisStatus = progress.analysisStatus || "idle";
+  let analysisStartedAt = progress.analysisStartedAt;
+  let analysisCompletedAt = progress.analysisCompletedAt;
+  let pendingFeedbackTitle = progress.pendingFeedbackTitle;
+  let pendingFeedbackText = progress.pendingFeedbackText;
+  let latestFeedbackTitle = progress.latestFeedbackTitle;
+  let latestFeedbackText = progress.latestFeedbackText;
+  let lastAnalyzedDay = progress.lastAnalyzedDay;
+
+  const completedBeforeRelease = [...new Set(progress.completedDays)].sort(
+    (a, b) => a - b
+  );
+  const highestCompletedBeforeRelease = completedBeforeRelease.length
+    ? completedBeforeRelease[completedBeforeRelease.length - 1]
+    : 0;
+
+  if (highestCompletedBeforeRelease === 0 && !unlockedDays.includes(1)) {
+    unlockedDays = [1];
+  }
+
+  if (analysisStatus === "processing" && analysisCompletedAt) {
+    const analysisMoment = new Date(analysisCompletedAt);
+
+    if (now.getTime() >= analysisMoment.getTime()) {
+      analysisStatus = "ready";
+    }
+  }
+
+  if (nextDayUnlockAt && highestCompletedBeforeRelease > 0) {
+    const unlockMoment = new Date(nextDayUnlockAt);
+
+    if (now.getTime() >= unlockMoment.getTime()) {
+      const nextDayNumber = Math.min(
+        baseJourneyDays.length,
+        highestCompletedBeforeRelease + 1
+      );
+      unlockedDays = Array.from(
+        new Set([...unlockedDays, nextDayNumber, ...completedBeforeRelease, 1])
+      ).sort((a, b) => a - b);
+      nextDayUnlockAt = undefined;
+      pendingFeedbackTitle = undefined;
+      pendingFeedbackText = undefined;
+      analysisStatus = "idle";
+      analysisStartedAt = undefined;
+      analysisCompletedAt = undefined;
+    } else {
+      unlockedDays = unlockedDays.filter((day) => day <= highestCompletedBeforeRelease);
+    }
+  }
+
+  const journeyDays = baseJourneyDays.map((day) => ({
     ...day,
     tasks: day.tasks.map((task) => {
       const currentValue = getTaskCurrentValue(task, context);
@@ -2207,14 +3506,42 @@ export async function evaluateJourney(
   let lastCompletedAt = progress.lastCompletedAt;
 
   for (const day of journeyDays) {
-    const unlocked = progress.unlockedDays.includes(day.day);
+    const unlocked = unlockedDays.includes(day.day);
     const finished = day.tasks.every((task) => task.completed);
     const alreadyCompleted = nextCompletedDays.includes(day.day);
 
     if (unlocked && finished && !alreadyCompleted) {
       nextCompletedDays.push(day.day);
       totalXp += day.rewardXp;
-      lastCompletedAt = new Date().toISOString();
+      lastCompletedAt = now.toISOString();
+
+      if (day.day < journeyDays.length) {
+        nextDayUnlockAt = getNextLocalMidnightIso(now);
+        unlockedDays = unlockedDays.filter((value) => value <= day.day);
+        const feedback = buildFinanceCompletionFeedback(
+          day.day,
+          context,
+          language,
+          plan.primaryArea
+        );
+        pendingFeedbackTitle = feedback.title;
+        pendingFeedbackText = feedback.text;
+        latestFeedbackTitle = feedback.title;
+        latestFeedbackText = feedback.text;
+        lastAnalyzedDay = day.day;
+        analysisStatus = "processing";
+        analysisStartedAt = now.toISOString();
+        analysisCompletedAt = new Date(
+          now.getTime() + JOURNEY_ANALYSIS_DELAY_MS
+        ).toISOString();
+      } else {
+        nextDayUnlockAt = undefined;
+        pendingFeedbackTitle = undefined;
+        pendingFeedbackText = undefined;
+        analysisStatus = "ready";
+        analysisStartedAt = now.toISOString();
+        analysisCompletedAt = now.toISOString();
+      }
     }
   }
 
@@ -2222,26 +3549,36 @@ export async function evaluateJourney(
   const highestCompleted = orderedCompleted.length
     ? orderedCompleted[orderedCompleted.length - 1]
     : 0;
-
-  const unlockedDays = Array.from(
-    new Set([
-      1,
-      ...progress.unlockedDays,
-      ...(highestCompleted < journeyDays.length ? [highestCompleted + 1] : []),
-    ])
+  const resolvedUnlockedDays = Array.from(
+    new Set([1, ...orderedCompleted, ...unlockedDays])
   ).sort((a, b) => a - b);
-
-  const currentDay = orderedCompleted.length >= journeyDays.length
-    ? journeyDays.length
-    : Math.min(highestCompleted + 1, journeyDays.length);
+  const firstActionableDay =
+    resolvedUnlockedDays.find((day) => !orderedCompleted.includes(day)) ?? 1;
+  const waitingForNextRelease =
+    Boolean(nextDayUnlockAt) && highestCompleted > 0 && highestCompleted < journeyDays.length;
+  const currentDay =
+    orderedCompleted.length >= journeyDays.length
+      ? journeyDays.length
+      : waitingForNextRelease
+        ? highestCompleted
+        : firstActionableDay;
 
   const nextProgress: AIJourneyProgress = {
     ...progress,
     currentDay,
     completedDays: orderedCompleted,
-    unlockedDays,
+    unlockedDays: resolvedUnlockedDays,
     totalXp,
     lastCompletedAt,
+    nextDayUnlockAt,
+    analysisStatus,
+    analysisStartedAt,
+    analysisCompletedAt,
+    pendingFeedbackTitle,
+    pendingFeedbackText,
+    latestFeedbackTitle,
+    latestFeedbackText,
+    lastAnalyzedDay,
     finishedAt:
       orderedCompleted.length === journeyDays.length
         ? progress.finishedAt || new Date().toISOString()

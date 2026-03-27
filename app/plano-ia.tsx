@@ -27,6 +27,18 @@ import {
   normalizeJourneyProgress,
 } from "./utils/lifeJourney";
 
+function formatCountdown(ms: number) {
+  const totalSeconds = Math.max(Math.floor(ms / 1000), 0);
+  const hours = String(Math.floor(totalSeconds / 3600)).padStart(2, "0");
+  const minutes = String(Math.floor((totalSeconds % 3600) / 60)).padStart(
+    2,
+    "0"
+  );
+  const seconds = String(totalSeconds % 60).padStart(2, "0");
+
+  return `${hours}:${minutes}:${seconds}`;
+}
+
 export default function PlanoIAScreen() {
   const { colors, settings } = useAppTheme();
   const { language, t } = useAppLanguage();
@@ -64,6 +76,7 @@ export default function PlanoIAScreen() {
   );
   const [showPlanTour, setShowPlanTour] = useState(false);
   const [planTourStepIndex, setPlanTourStepIndex] = useState(0);
+  const [countdownNow, setCountdownNow] = useState(Date.now());
   const [tourTargets, setTourTargets] = useState<{
     days: { x: number; y: number; width: number; height: number } | null;
     evolution: { x: number; y: number; width: number; height: number } | null;
@@ -135,6 +148,137 @@ export default function PlanoIAScreen() {
     [lifeAreaMeta, plan]
   );
   const isPremium = settings.plan === "premium";
+  const highestCompletedDay = useMemo(
+    () =>
+      progress.completedDays.length > 0
+        ? progress.completedDays[progress.completedDays.length - 1]
+        : 0,
+    [progress.completedDays]
+  );
+  const pendingDayNumber = useMemo(() => {
+    if (!plan || highestCompletedDay <= 0 || highestCompletedDay >= plan.journeyDays.length) {
+      return null;
+    }
+
+    return highestCompletedDay + 1;
+  }, [highestCompletedDay, plan]);
+  const waitingForNextRelease = Boolean(
+    progress.nextDayUnlockAt && pendingDayNumber
+  );
+  const isAnalyzingJourney =
+    progress.analysisStatus === "processing" &&
+    Boolean(progress.analysisCompletedAt) &&
+    new Date(progress.analysisCompletedAt || 0).getTime() > countdownNow;
+  const nextDayUnlockLabel = useMemo(() => {
+    if (!progress.nextDayUnlockAt) {
+      return null;
+    }
+
+    try {
+      return new Intl.DateTimeFormat(language === "pt" ? "pt-BR" : language, {
+        hour: "2-digit",
+        minute: "2-digit",
+        day: "2-digit",
+        month: "2-digit",
+      }).format(new Date(progress.nextDayUnlockAt));
+    } catch {
+      return progress.nextDayUnlockAt;
+    }
+  }, [language, progress.nextDayUnlockAt]);
+  const countdownLabel = useMemo(() => {
+    if (!progress.nextDayUnlockAt) {
+      return null;
+    }
+
+    const remaining = new Date(progress.nextDayUnlockAt).getTime() - countdownNow;
+    return formatCountdown(remaining);
+  }, [countdownNow, progress.nextDayUnlockAt]);
+  const releaseCopy = useMemo(
+    () =>
+      ({
+        pt: {
+          analyzingEyebrow: "IA analisando seu dia",
+          analyzingTitle: "A IA está lendo o que você preencheu",
+          analyzingText:
+            "Sua base acabou de ser concluída. Agora a IA está cruzando as informações de todos os módulos para montar o próximo dia com mais coerência.",
+          feedbackEyebrow: "Leitura da IA",
+          unlockEyebrow: "Próximo dia em preparação",
+          unlockTitle: (day: number) => `O Dia ${day} será liberado na próxima virada`,
+          unlockText: (label: string) =>
+            `Você já concluiu o dia atual. Agora a IA está analisando o que você preencheu e vai liberar o próximo passo a partir de ${label}.`,
+          countdownLabel: (value: string) =>
+            `Contagem para liberar o próximo dia: ${value}`,
+          hiddenDayTitle: (day: number) => `Dia ${day} ainda protegido`,
+          hiddenDayText:
+            "As tarefas deste dia continuam ocultas. Elas só aparecem depois que o dia anterior for concluído e a meia-noite chegar.",
+        },
+        en: {
+          analyzingEyebrow: "AI analyzing your day",
+          analyzingTitle: "The AI is reading what you filled in",
+          analyzingText:
+            "Your base has just been completed. The AI is now crossing information from every module to build the next day with more coherence.",
+          feedbackEyebrow: "AI reading",
+          unlockEyebrow: "Next day in preparation",
+          unlockTitle: (day: number) => `Day ${day} will unlock on the next rollover`,
+          unlockText: (label: string) =>
+            `You have already completed the current day. The AI is now analyzing what you filled in and will release the next step starting at ${label}.`,
+          countdownLabel: (value: string) =>
+            `Countdown to unlock the next day: ${value}`,
+          hiddenDayTitle: (day: number) => `Day ${day} is still protected`,
+          hiddenDayText:
+            "The tasks for this day remain hidden. They only appear after the previous day is completed and midnight arrives.",
+        },
+        es: {
+          analyzingEyebrow: "La IA analiza tu día",
+          analyzingTitle: "La IA está leyendo lo que completaste",
+          analyzingText:
+            "Tu base acaba de ser concluida. Ahora la IA está cruzando la información de todos los módulos para montar el siguiente día con más coherencia.",
+          feedbackEyebrow: "Lectura de la IA",
+          unlockEyebrow: "Próximo día en preparación",
+          unlockTitle: (day: number) => `El Día ${day} se liberará en el próximo cambio de día`,
+          unlockText: (label: string) =>
+            `Ya completaste el día actual. Ahora la IA está analizando lo que registraste y liberará el siguiente paso a partir de ${label}.`,
+          countdownLabel: (value: string) =>
+            `Cuenta regresiva para liberar el siguiente día: ${value}`,
+          hiddenDayTitle: (day: number) => `El Día ${day} sigue protegido`,
+          hiddenDayText:
+            "Las tareas de este día siguen ocultas. Solo aparecen después de completar el día anterior y cuando llegue la medianoche.",
+        },
+        fr: {
+          analyzingEyebrow: "L'IA analyse votre journée",
+          analyzingTitle: "L'IA lit ce que vous avez rempli",
+          analyzingText:
+            "Votre base vient d'être complétée. L'IA croise maintenant les informations de tous les modules pour construire le jour suivant avec plus de cohérence.",
+          feedbackEyebrow: "Lecture de l'IA",
+          unlockEyebrow: "Jour suivant en préparation",
+          unlockTitle: (day: number) => `Le Jour ${day} sera libéré au prochain passage à minuit`,
+          unlockText: (label: string) =>
+            `Vous avez déjà terminé le jour actuel. L'IA analyse maintenant ce que vous avez rempli et libérera l'étape suivante à partir de ${label}.`,
+          countdownLabel: (value: string) =>
+            `Compte à rebours avant le prochain jour : ${value}`,
+          hiddenDayTitle: (day: number) => `Le Jour ${day} reste protégé`,
+          hiddenDayText:
+            "Les tâches de ce jour restent cachées. Elles n'apparaissent qu'après la fin du jour précédent et le passage de minuit.",
+        },
+        it: {
+          analyzingEyebrow: "L'IA analizza la tua giornata",
+          analyzingTitle: "L'IA sta leggendo ciò che hai compilato",
+          analyzingText:
+            "La tua base è appena stata completata. Ora l'IA sta incrociando le informazioni di tutti i moduli per costruire il giorno successivo con più coerenza.",
+          feedbackEyebrow: "Lettura dell'IA",
+          unlockEyebrow: "Prossimo giorno in preparazione",
+          unlockTitle: (day: number) => `Il Giorno ${day} verrà sbloccato al prossimo cambio di giorno`,
+          unlockText: (label: string) =>
+            `Hai già completato il giorno attuale. Ora l'IA sta analizzando ciò che hai compilato e rilascerà il passo successivo a partire da ${label}.`,
+          countdownLabel: (value: string) =>
+            `Conto alla rovescia per sbloccare il prossimo giorno: ${value}`,
+          hiddenDayTitle: (day: number) => `Il Giorno ${day} è ancora protetto`,
+          hiddenDayText:
+            "Le attività di questo giorno restano nascoste. Appaiono solo dopo aver concluso il giorno precedente e dopo la mezzanotte.",
+        },
+      })[language],
+    [language]
+  );
   const activePlanTourStep = planTourSteps[planTourStepIndex];
   const activePlanTourTarget =
     planTourStepIndex < 2 ? tourTargets.days : tourTargets.evolution;
@@ -170,6 +314,18 @@ export default function PlanoIAScreen() {
 
     measurePlanTourSpotlight("evolution", evolutionTourRef.current);
   }, [measurePlanTourSpotlight, planTourStepIndex, showPlanTour]);
+
+  useEffect(() => {
+    if (!progress.nextDayUnlockAt && !isAnalyzingJourney) {
+      return;
+    }
+
+    const intervalId = setInterval(() => {
+      setCountdownNow(Date.now());
+    }, 1000);
+
+    return () => clearInterval(intervalId);
+  }, [isAnalyzingJourney, progress.nextDayUnlockAt]);
 
   const handleAdvancePlanTour = useCallback(async () => {
     const lastStep = planTourStepIndex >= planTourSteps.length - 1;
@@ -351,6 +507,49 @@ export default function PlanoIAScreen() {
               </Pressable>
             </View>
 
+            {progress.pendingFeedbackTitle || waitingForNextRelease || isAnalyzingJourney ? (
+              <View
+                style={[
+                  styles.releaseCard,
+                  {
+                    backgroundColor: colors.surface,
+                    borderColor: colors.accentBorder,
+                  },
+                ]}
+              >
+                <Text style={[styles.releaseEyebrow, { color: colors.accent }]}>
+                  {isAnalyzingJourney
+                    ? releaseCopy.analyzingEyebrow
+                    : progress.pendingFeedbackTitle
+                    ? releaseCopy.feedbackEyebrow
+                    : releaseCopy.unlockEyebrow}
+                </Text>
+                <Text style={[styles.releaseTitle, { color: colors.text }]}>
+                  {isAnalyzingJourney
+                    ? releaseCopy.analyzingTitle
+                    : progress.pendingFeedbackTitle ||
+                    (pendingDayNumber
+                      ? releaseCopy.unlockTitle(pendingDayNumber)
+                      : "")}
+                </Text>
+                <Text
+                  style={[styles.releaseText, { color: colors.textSecondary }]}
+                >
+                  {isAnalyzingJourney
+                    ? releaseCopy.analyzingText
+                    : progress.pendingFeedbackText ||
+                    (pendingDayNumber && nextDayUnlockLabel
+                      ? releaseCopy.unlockText(nextDayUnlockLabel)
+                      : "")}
+                </Text>
+                {waitingForNextRelease && countdownLabel ? (
+                  <Text style={[styles.releaseCountdown, { color: colors.accent }]}>
+                    {releaseCopy.countdownLabel(countdownLabel)}
+                  </Text>
+                ) : null}
+              </View>
+            ) : null}
+
             <Text style={[styles.sectionTitle, { color: colors.text }]}>
               {t("plan.sectionTitle")}
             </Text>
@@ -366,6 +565,16 @@ export default function PlanoIAScreen() {
               {plan.journeyDays.map((item) => {
                 const unlocked = progress.unlockedDays.includes(item.day);
                 const completed = progress.completedDays.includes(item.day);
+                const isLockedFutureDay = !unlocked;
+                const shouldHideTasks = isLockedFutureDay;
+                const lockedTitle =
+                  pendingDayNumber === item.day
+                    ? releaseCopy.unlockTitle(item.day)
+                    : releaseCopy.hiddenDayTitle(item.day);
+                const lockedText =
+                  pendingDayNumber === item.day && nextDayUnlockLabel
+                    ? releaseCopy.unlockText(nextDayUnlockLabel)
+                    : releaseCopy.hiddenDayText;
 
                 return (
                 <View
@@ -446,55 +655,57 @@ export default function PlanoIAScreen() {
                   </View>
 
                   <Text style={[styles.dayTitle, { color: colors.text }]}>
-                    {item.title}
+                    {shouldHideTasks ? lockedTitle : item.title}
                   </Text>
                   <Text style={[styles.dayText, { color: colors.textSecondary }]}>
-                    {item.summary}
+                    {shouldHideTasks ? lockedText : item.summary}
                   </Text>
 
-                  <View style={styles.taskList}>
-                    {item.tasks.map((task) => (
-                      <View key={task.id} style={styles.taskRow}>
-                        <Ionicons
-                          name={
-                            task.completed
-                              ? "checkmark-circle"
-                              : unlocked
-                                ? "ellipse-outline"
-                                : "lock-closed-outline"
-                          }
-                          size={16}
-                          color={
-                            task.completed
-                              ? colors.success
-                              : unlocked
-                                ? colors.textMuted
-                                : colors.textMuted
-                          }
-                        />
-                        <Text
-                          style={[
-                            styles.taskText,
-                            { color: colors.textSecondary },
-                          ]}
-                        >
-                          {task.title}
-                        </Text>
-                        <Text
-                          style={[
-                            styles.taskValue,
-                            {
-                              color: task.completed
+                  {!shouldHideTasks ? (
+                    <View style={styles.taskList}>
+                      {item.tasks.map((task) => (
+                        <View key={task.id} style={styles.taskRow}>
+                          <Ionicons
+                            name={
+                              task.completed
+                                ? "checkmark-circle"
+                                : unlocked
+                                  ? "ellipse-outline"
+                                  : "lock-closed-outline"
+                            }
+                            size={16}
+                            color={
+                              task.completed
                                 ? colors.success
-                                : colors.textMuted,
-                            },
-                          ]}
-                        >
-                          {Math.min(task.currentValue, task.targetValue)}/{task.targetValue}
-                        </Text>
-                      </View>
-                    ))}
-                  </View>
+                                : unlocked
+                                  ? colors.textMuted
+                                  : colors.textMuted
+                            }
+                          />
+                          <Text
+                            style={[
+                              styles.taskText,
+                              { color: colors.textSecondary },
+                            ]}
+                          >
+                            {task.title}
+                          </Text>
+                          <Text
+                            style={[
+                              styles.taskValue,
+                              {
+                                color: task.completed
+                                  ? colors.success
+                                  : colors.textMuted,
+                              },
+                            ]}
+                          >
+                            {Math.min(task.currentValue, task.targetValue)}/{task.targetValue}
+                          </Text>
+                        </View>
+                      ))}
+                    </View>
+                  ) : null}
 
                   <View
                     style={[
@@ -678,6 +889,31 @@ const styles = StyleSheet.create({
   secondaryButtonText: {
     fontSize: 13,
     fontWeight: "800",
+  },
+  releaseCard: {
+    borderRadius: 18,
+    borderWidth: 1,
+    padding: 14,
+    marginBottom: 18,
+  },
+  releaseEyebrow: {
+    fontSize: 12,
+    fontWeight: "800",
+  },
+  releaseTitle: {
+    fontSize: 16,
+    fontWeight: "900",
+    marginTop: 8,
+  },
+  releaseText: {
+    fontSize: 13,
+    lineHeight: 19,
+    marginTop: 8,
+  },
+  releaseCountdown: {
+    fontSize: 12,
+    fontWeight: "800",
+    marginTop: 12,
   },
   sectionTitle: {
     fontSize: 16,
